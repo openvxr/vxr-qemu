@@ -1,0 +1,3434 @@
+
+*** qemu-4.2.0/chardev/char-socket.c.orig
+--- qemu-4.2.0/chardev/char-socket.c
+***************
+*** 38 ****
+--- 39,43 ----
++ #ifdef CISCO_VXR
++ #include <sys/socket.h>
++ #include <netinet/in.h>
++ #include <netinet/tcp.h>
++ #endif
+***************
+*** 1177 ****
+--- 1183,1188 ----
++ #ifdef CISCO_VXR
++     int optval = 1;
++     if (setsockopt(s->listener->sioc[0]->fd, SOL_SOCKET, SO_KEEPALIVE, &optval, sizeof(optval)) < 0) {
++         error_report("setsockopt with SOL_SOCKET failed");
++     }
++ #endif
+***************
+*** 1373 ****
+--- 1385,1389 ----
++ #ifdef CISCO_VXR
++     g_free( chr->filename );
++     chr->filename = qemu_chr_socket_address(s,"");
++ #endif
++     return;
+*** qemu-4.2.0/default-configs/x86_64-softmmu.mak.orig
+--- qemu-4.2.0/default-configs/x86_64-softmmu.mak
+***************
+*** 3 ****
+--- 4 ----
++ CONFIG_VXR_I2C_DEVS=y
+*** qemu-4.2.0/hw/i2c/core.c.orig
+--- qemu-4.2.0/hw/i2c/core.c
+***************
+*** 20 ****
+--- 21,23 ----
++ #ifdef CISCO_VXR
++     DEFINE_PROP_UINT8("address-range", struct I2CSlave, address_range, 1),
++ #endif  
+***************
+*** 78 ****
+--- 82,109 ----
++ #ifdef CISCO_VXR
++ int i2c_start_probe(I2CBus *bus, uint8_t address, int recv)
++ {
++     BusChild *kid;
++     if (address == I2C_BROADCAST) {
++         bus->broadcast = true;
++     }
++     QTAILQ_FOREACH(kid, &bus->qbus.children, sibling) {
++         DeviceState *qdev = kid->child;
++         I2CSlave *candidate = I2C_SLAVE(qdev);
++         if ((candidate->address <= address &&
++              address < candidate->address + candidate->address_range) || (bus->broadcast)) {
++             if ((candidate->address == 0) && !bus->broadcast) {
++                 I2CSlaveClass *sclass;
++                 sclass = I2C_SLAVE_GET_CLASS(candidate);
++                 if (sclass->probe_address) {
++                     if (sclass->probe_address(candidate, address)) {
++                         continue;
++                     }
++                 }
++             }
++             return 0;
++         }
++     }
++     return 1;
++ }
++ #endif
++ 
+***************
+*** 119 ****
+--- 151,163 ----
++ #ifdef CISCO_VXR
++             if ((candidate->address <= address &&
++              address < candidate->address + candidate->address_range) || (bus->broadcast)) {
++                 if ((candidate->address == 0) && !bus->broadcast) {
++                     I2CSlaveClass *sclass;
++                     sclass = I2C_SLAVE_GET_CLASS(candidate);
++                     if (sclass->probe_address) {
++                         if (sclass->probe_address(candidate, address)) {
++                             continue;
++                         }
++                     }
++                 }
++ #else
+***************
+*** 120 ****
+--- 165 ----
++ #endif
+***************
+*** 154 ****
+--- 200,206 ----
++ #ifdef CISCO_VXR
++         if (sc->decode_address) {
++             if (sc->decode_address(node->elt, address)) {
++                 return 1;
++             }
++         }
++ #endif
+***************
+*** 263 ****
+--- 316,319 ----
++ #ifdef CISCO_VXR
++         VMSTATE_UINT8(address_range, I2CSlave),
++         VMSTATE_BOOL(broadcast, I2CBus),
++ #endif
+*** qemu-4.2.0/hw/misc/Kconfig.orig
+--- qemu-4.2.0/hw/misc/Kconfig
+***************
+*** 127 ****
+--- 128,130 ----
++ config VXR_I2C_DEVS
++     bool
++ 
+*** qemu-4.2.0/hw/misc/Makefile.objs.orig
+--- qemu-4.2.0/hw/misc/Makefile.objs
+***************
+*** 10 ****
+--- 11,15 ----
++ # if CISCO_VXR
++ common-obj-$(CONFIG_VXR_I2C_DEVS) += myi2cdevice.o
++ common-obj-$(CONFIG_VXR_I2C_DEVS) += simi2c-br.o
++ common-obj-$(CONFIG_VXR_I2C_DEVS) += tmp421.o
++ # end if CISCO_VXR
+***************
+*** 29 ****
+--- 35,39 ----
++ 
++ # CISCO_VXR
++ obj-$(CONFIG_PCI) += simdev.o simdev_plus.o
++ obj-$(CONFIG_PCI) += simi2cdev.o
++ # CISCO_VXR
+*** qemu-4.2.0/hw/misc/tmp421.c.orig
+--- qemu-4.2.0/hw/misc/tmp421.c
+***************
+*** 317 ****
+!     memset(s->temperature, 0, sizeof(s->temperature));
+--- 317 ----
+!     // memset(s->temperature, 0, sizeof(s->temperature)); // make sure reset won't overwrite temperature values set by user
+*** qemu-4.2.0/include/hw/i2c/i2c.h.orig
+--- qemu-4.2.0/include/hw/i2c/i2c.h
+***************
+*** 45 ****
+--- 46,52 ----
++ #ifdef CISCO_VXR
++     /* Notify the slave what address was decoded. Only needed for slaves that
++      * decode multiple addresses. Called after event() for I2C_START_RECV/SEND
++      */
++     int (*decode_address)(I2CSlave *s, uint8_t address);
++     int (*probe_address)(I2CSlave *s, uint8_t address);
++ #endif
+***************
+*** 52 ****
+--- 60,62 ----
++ #ifdef CISCO_VXR
++     uint8_t address_range;
++ #endif   
+***************
+*** 75 ****
+--- 86 ----
++ int i2c_start_probe(I2CBus *bus, uint8_t address, int recv);
+*** qemu-4.2.0/monitor/qmp-cmds.c.orig
+--- qemu-4.2.0/monitor/qmp-cmds.c
+***************
+*** 40 ****
+--- 41 ----
++ #include "qapi/qapi-commands-net.h"
+***************
+*** 414 ****
+--- 416,449 ----
++ }
++ 
++ extern int slirp_vxr_redir( int npairs, uint16_t *redir );
++ UsernetRedirDataList *qmp_query_usernet_redir(Error **errp)
++ {
++     UsernetRedirDataList *rdir_list = NULL;
++     UsernetRedirDataList **list = &(rdir_list);
++ 
++ 
++     int npairs = 16;
++     uint16_t redir[ 2 * npairs ];
++     int count =  slirp_vxr_redir( npairs, &redir[0] );
++ 
++     if(count <= 0) {
++         UsernetRedirDataList *info = g_malloc0(sizeof(*info));
++         info->value = g_malloc0(sizeof(*info->value));
++         info->value->lcl = 0;
++         info->value->fwd = count; //nothing to report(0) or out of space(-1)
++         info->next = *list;
++         *list = info;
++     }else {
++         int i= 0;
++         uint16_t* r = redir;
++         for( i=0 ;  i < count; i++ ) {
++             UsernetRedirDataList *info = g_malloc0(sizeof(*info));
++             info->value = g_malloc0(sizeof(*info->value));
++             info->value->lcl = ntohs(r[(i*2)]);
++             info->value->fwd = ntohs(r[(i*2)+1]);
++             info->next = *list;
++             *list = info;
++         }
++     }
++ 
++     return rdir_list;
+*** qemu-4.2.0/qapi/net.json.orig
+--- qemu-4.2.0/qapi/net.json
+***************
+*** 756 ****
+--- 757,787 ----
++ 
++ ##
++ # @UsernetRedirData:
++ #
++ # Redir/Hostfwd info.
++ #
++ # @lcl: local port. 0 implies nothing/error
++ #
++ # @fwd: forward port
++ #
++ # Since: 3.0
++ #
++ ##
++ { 'struct': 'UsernetRedirData',
++   'data': {
++     'lcl': 'int',
++     'fwd': 'int' } }
++ 
++ ##
++ # @query-usernet-redir:
++ #
++ # Returns usernet redit/hostforward info 
++ #
++ #
++ # Returns: list of @UsernetRedirData 
++ #
++ # Since: 3.0
++ #
++ ##
++ { 'command': 'query-usernet-redir', 'returns': ['UsernetRedirData'],
++   'allow-preconfig': true }
+*** qemu-4.2.0/slirp/src/slirp.c.orig
+--- qemu-4.2.0/slirp/src/slirp.c
+***************
+*** 47 ****
+--- 48,50 ----
++ static QTAILQ_HEAD(slirp_instances, Slirp) slirp_instances =
++     QTAILQ_HEAD_INITIALIZER(slirp_instances);
++ 
+***************
+*** 321 ****
+--- 325,326 ----
++     QTAILQ_INSERT_TAIL(&slirp_instances, slirp, entry);
++ 
+***************
+*** 326 ****
+--- 332,333 ----
++     QTAILQ_REMOVE(&slirp_instances, slirp, entry);
++ 
+***************
+*** 1112 ****
+--- 1120,1145 ----
++ 
++ #ifdef CISCO_VXR
++ int slirp_vxr_redir( int npairs, uint16_t *redir );
++ int slirp_vxr_redir( int npairs, uint16_t *redir )
++ {
++     Slirp *slirp;
++     struct socket *so;
++     int avail = npairs;
++ 
++     if( QTAILQ_EMPTY( &slirp_instances ) ) {
++         return 0;
++     }
++ 
++     QTAILQ_FOREACH( slirp, &slirp_instances, entry ) {
++         for( so = slirp->tcb.so_next;  so != &slirp->tcb;  so = so->so_next ) {
++             if( avail-- < 1 ) {
++                 /* return -1 indicates ran out of space */
++                 return -1;
++             }
++             *redir++ = so->so_lport;
++             *redir++ = so->so_fport;
++         }
++     }
++     return npairs - avail;
++ }
++ #endif /* CISCO_VXR */
+*** qemu-4.2.0/slirp/src/slirp.h.orig
+--- qemu-4.2.0/slirp/src/slirp.h
+***************
+*** 47 ****
+--- 48 ----
++ #include "../../include/qemu/queue.h"
+***************
+*** 123 ****
+--- 125 ----
++     QTAILQ_ENTRY(Slirp) entry;
+*** qemu-4.2.0/target/i386/cpu.c.orig
+--- qemu-4.2.0/target/i386/cpu.c
+***************
+*** 3833 ****
+!         .model_id = "AMD EPYC Processor",
+--- 3833 ----
+!         .model_id = "AMD EPYC (with IBPB)-VXR",
+***************
+*** 3843 ****
+!                       "AMD EPYC Processor (with IBPB)" },
+--- 3843 ----
+!                       "AMD EPYC (with IBPB)-VXR" },
+***************
+*** 4005 ****
+--- 4006 ----
++  #ifndef CISCO_VXR
+***************
+*** 4015 ****
+--- 4017,4021 ----
++ #else
++     uint32_t vxr_str = 0x20202020;
++     vxr_str = 0x00525856; // " RXV"
++     memcpy(str + 0 * 16 +  0, &vxr_str, 4);
++ #endif
+*** qemu-4.2.0/include/hw/hw.h.orig
+--- qemu-4.2.0/include/hw/hw.h
+***************
+*** 6 ****
+--- 7,15 ----
++ #include "exec/cpu-common.h"
++ #include "qom/object.h"
++ #include "exec/memory.h"
++ #include "hw/irq.h"
++ #include "migration/vmstate.h"
++ #include "migration/qemu-file-types.h"
++ #include "qemu/module.h"
++ #include "sysemu/reset.h"
++ #include "hw/qdev-properties.h"
+*** qemu-4.2.0/exec.c.orig
+--- qemu-4.2.0/exec.c
+***************
+*** 3566 ****
+!     if (buffer != bounce.buffer) {
+--- 3566 ----
+!     if ((buffer < bounce.buffer) || (buffer + access_len > bounce.buffer + bounce.len)) {
+*** qemu-4.2.0/hw/misc/myi2cdevice.c.orig
+--- qemu-4.2.0/hw/misc/myi2cdevice.c
+***************
+*** 0 ****
+--- 1,254 ----
++ /*
++  *  @author  Open VXR, openvxr@cisco.com
++  *
++  *  Copyright (c) 2014-2020 by cisco Systems, Inc.
++  *
++  *  This work is licensed under the terms of the GNU GPL, version 2 or later.
++  *  See the COPYING file in the top-level directory.
++  */
++ 
++ #include "qemu/osdep.h"
++ #include "hw/hw.h"
++ #include "hw/i2c/i2c.h"
++ #include "myi2cdevice.h"
++ #include "qapi/error.h"
++ #include "qapi/visitor.h"
++ 
++ #define I2C_DEVICE_DEBUG 0
++ #include "obmc_device_common.h"
++ #define MAX_BUF 1024
++ 
++ static void my_interrupt_update(MyI2CDeviceState *s)
++ {
++ 	DBPRINT("XDEBUG: %s\n", __FUNCTION__);
++     qemu_set_irq(s->pin, 1);	/* POL */
++ }
++ 
++ static void my_get_value(Object *obj, Visitor *v, const char *name,
++                                    void *opaque, Error **errp)
++ {
++     MyI2CDeviceState *s = MYI2CDEVICE(obj);
++     int64_t value = s->regdata[s->regadrs];
++ 
++ 	DBPRINT("XDEBUG: %s\n", __FUNCTION__);
++     visit_type_int(v, name, &value, errp);
++ }
++ static void my_set_value(Object *obj, Visitor *v, const char *name,
++                                    void *opaque, Error **errp)
++ {
++     MyI2CDeviceState *s = MYI2CDEVICE(obj);
++     Error *local_err = NULL;
++     int64_t temp;
++ 
++ 	DBPRINT("XDEBUG: %s\n", __FUNCTION__);
++     visit_type_int(v, name, &temp, &local_err);
++     if (local_err) {
++         error_propagate(errp, local_err);
++         return;
++     }
++ 
++     s->regdata[s->regadrs] = (int16_t) (temp);
++ 
++ }
++ 
++ static void my_read(MyI2CDeviceState *s)
++ {
++ 	DBPRINT("XDEBUG: %s, buf[%d]=0x%x\n", __FUNCTION__, s->len, s->regdata[s->command] & 0xff);
++     s->len = 0;
++     s->buf[s->len++] = s->regdata[s->command] & 0xff;
++ }
++ 
++ static void my_write(MyI2CDeviceState *s)
++ {
++ 	DBPRINT("XDEBUG: %s, buf[%d]=0x%x\n", __FUNCTION__, s->len, s->buf[s->len]);
++ 	s->regdata[s->command] = s->buf[0];
++ 	if (s->len>=2){
++ 		/*write more than 1 byte*/
++ 		s->regdata[s->command+1] = s->buf[1];
++ 	}
++ }
++ 
++ static uint8_t myi2c_rx(I2CSlave *i2c)
++ {
++     MyI2CDeviceState *s = MYI2CDEVICE(i2c);
++ 
++     DBPRINT("XDEBUG:%04x:%s: cur=%d\n", i2c->address, __FUNCTION__, s->len);
++ 
++     if (s->len < 2) {
++         return s->buf[s->len ++];
++     }
++     return 0xff;
++ }
++ 
++ static int myi2c_tx(I2CSlave *i2c, uint8_t data)
++ {
++     MyI2CDeviceState *s = MYI2CDEVICE(i2c);
++ 
++ 	DBPRINT("XDEBUG:%04x:%s: data=0x%x cur=%d\n", i2c->address, __FUNCTION__, data, s->len);
++     if (s->len == 0) {
++         s->command = data;
++         s->len++;
++     } else {
++         if (s->len <= 2) {
++             s->buf[s->len - 1] = data;
++         }
++         s->len++;
++         my_write(s);
++     }
++     return 0;
++ }
++ 
++ static int myi2c_event(I2CSlave *i2c, enum i2c_event event)
++ {
++     MyI2CDeviceState *s = MYI2CDEVICE(i2c);
++ 
++ 	DBPRINT("XDEBUG:%04x:%s: %d cur=%d\n", i2c->address, __FUNCTION__, event, s->len);
++     if (event == I2C_START_RECV) {
++         my_read(s);
++     }
++ 
++     s->len = 0;
++     return 0;
++ }
++ 
++ static int myi2c_decode_address(I2CSlave *i2c, uint8_t address)
++ {
++ #if I2C_DEVICE_DEBUG
++     MyI2CDeviceState *s = MYI2CDEVICE(i2c);
++ #endif    
++     DBPRINT("XDEBUG:%04x:%s: cur %d address=%x\n", i2c->address, __FUNCTION__, s->len, address);
++ 
++     return 0;
++ }
++ 
++ static int my_post_load(void *opaque, int version_id)
++ {
++ //    MyI2CDeviceState *s = opaque;
++ 	DBPRINT("XDEBUG: %s\n", __FUNCTION__);
++ 
++     return 0;
++ }
++ 
++ static const VMStateDescription myi2cdevice = {
++     .name = "MYI2CDEVICE",
++     .version_id = 0,
++     .minimum_version_id = 0,
++     .post_load = my_post_load,
++     .fields = (VMStateField[]) {
++         VMSTATE_UINT8(len, MyI2CDeviceState),
++         VMSTATE_UINT8_ARRAY(buf, MyI2CDeviceState, MYI2CDEVICE_MAX_ADDRESS_LEN),
++         VMSTATE_UINT8(command, MyI2CDeviceState),
++         VMSTATE_UINT8(regadrs, MyI2CDeviceState),
++         // VMSTATE_UINT16_ARRAY(regdata, MyI2CDeviceState, 256),
++         VMSTATE_UINT8(preset, MyI2CDeviceState),
++         VMSTATE_I2C_SLAVE(i2c, MyI2CDeviceState),
++         VMSTATE_END_OF_LIST()
++     }
++ };
++ 
++ static void my_reset(I2CSlave *i2c)
++ {
++     MyI2CDeviceState *s = MYI2CDEVICE(i2c);
++ 
++ 	DBPRINT("XDEBUG: %s\n", __FUNCTION__);
++     s->regadrs = 0;
++ 
++     switch(s->preset){
++         case 0:
++             break;
++         case 1:
++             // LTC 2497
++             s->regdata[0xb0] = 0xbc;
++             s->regdata[0xb8] = 0xba;
++             s->regdata[0xb1] = 0xb8;
++             s->regdata[0xb9] = 0xb6;
++             s->regdata[0xb2] = 0xb4;
++             s->regdata[0xba] = 0xb2;
++             break;
++         case 2:
++             break;
++         case 3:
++             s->regdata[0xb0] = 128 - 2;
++             s->regdata[0xb8] = 128 - 10;
++             s->regdata[0xb1] = 128 + 4;
++             s->regdata[0xb9] = 128 + 4;
++             s->regdata[0xb2] = 128 + 4;
++             s->regdata[0xba] = 128 + 6;
++             s->regdata[0xb3] = 128 - 6;
++             s->regdata[0xbb] = 128 - 2;
++             s->regdata[0xb4] = 128 + 4;
++             s->regdata[0xbc] = 128 + 4;
++             s->regdata[0xb5] = 128 + 8;
++             s->regdata[0xbd] = 128 + 0;
++             break;
++         case 5:
++         	// LTC 2497 high
++         	s->regdata[0xb0] = 0xbc;
++         	s->regdata[0xb8] = 0xba;
++         	s->regdata[0xb1] = 0xb8;
++         	s->regdata[0xb9] = 0xb6;
++         	s->regdata[0xb2] = 0xb4;
++         	s->regdata[0xba] = 0xb2;
++         default:
++             break;
++     }
++ 
++     my_interrupt_update(s);
++ }
++ 
++ static void myi2c_init(DeviceState *dev, Error **errp)
++ {
++     I2CSlave *i2c = I2C_SLAVE(dev);
++     MyI2CDeviceState *s = MYI2CDEVICE(i2c);
++ 
++ 	DBPRINT("XDEBUG: %s\n", __FUNCTION__);
++     qdev_init_gpio_out(&i2c->qdev, &s->pin, 1);
++ 
++     my_reset(&s->i2c);
++ }
++ 
++ static void myi2c_initfn(Object *obj)
++ {
++ 	DBPRINT("XDEBUG: %s\n", __FUNCTION__);
++     object_property_add(obj, "value", "int",
++                         my_get_value,
++                         my_set_value, NULL, NULL, NULL);
++ }
++ 
++ static Property myi2c_properties[] = {
++     DEFINE_PROP_UINT8("preset", MyI2CDeviceState, preset, 0),
++     DEFINE_PROP_UINT8("regadrs", MyI2CDeviceState, regadrs, 0),
++     DEFINE_PROP_END_OF_LIST(),
++ };
++ 
++ static void myi2c_class_init(ObjectClass *klass, void *data)
++ {
++     DeviceClass *dc = DEVICE_CLASS(klass);
++     I2CSlaveClass *k = I2C_SLAVE_CLASS(klass);
++ 
++ 	DBPRINT("XDEBUG: %s\n", __FUNCTION__);
++     dc->realize = myi2c_init;
++     k->event = myi2c_event;
++     k->recv = myi2c_rx;
++     k->send = myi2c_tx;
++     k->decode_address = myi2c_decode_address;
++     dc->vmsd = &myi2cdevice;
++     dc->props = myi2c_properties;
++     dc->desc = "My I2C slave device sample";
++ }
++ 
++ static const TypeInfo myi2cdevice_info = {
++     .name          = TYPE_MYI2CDEVICE,
++     .parent        = TYPE_I2C_SLAVE,
++     .instance_size = sizeof(MyI2CDeviceState),
++     .instance_init = myi2c_initfn,
++     .class_init    = myi2c_class_init,
++ };
++ 
++ static void myi2cdevice_register_types(void)
++ {
++ 	DBPRINT("XDEBUG: %s\n", __FUNCTION__);
++     type_register_static(&myi2cdevice_info);
++ }
++ 
++ type_init(myi2cdevice_register_types)
+*** qemu-4.2.0/hw/misc/myi2cdevice.h.orig
+--- qemu-4.2.0/hw/misc/myi2cdevice.h
+***************
+*** 0 ****
+--- 1,34 ----
++ /*
++  *  @author  Open VXR, openvxr@cisco.com
++  *
++  *  Copyright (c) 2014-2020 by cisco Systems, Inc.
++  *
++  *  This work is licensed under the terms of the GNU GPL, version 2 or later.
++  *  See the COPYING file in the top-level directory.
++  */
++ 
++ #ifndef QEMU_MYI2CDEVICE_H
++ #define QEMU_MYI2CDEVICE_H
++ 
++ #include "hw/i2c/i2c.h"
++ 
++ #define TYPE_MYI2CDEVICE "myi2cdevice"
++ #define MYI2CDEVICE(obj) OBJECT_CHECK(MyI2CDeviceState, (obj), TYPE_MYI2CDEVICE)
++ #define MYI2CDEVICE_MAX_ADDRESS_LEN 2
++ 
++ typedef struct MyI2CDeviceState {
++     /*< private >*/
++     I2CSlave i2c;
++     /*< public >*/
++ 
++     uint8_t len;
++     uint8_t buf[MYI2CDEVICE_MAX_ADDRESS_LEN];
++     uint8_t command;
++     int16_t regdata[256];
++     uint8_t preset;
++     uint8_t regadrs;
++     qemu_irq pin;
++ } MyI2CDeviceState;
++ 
++ 
++ #endif
+*** qemu-4.2.0/hw/misc/eeprom_cmn.h.orig
+--- qemu-4.2.0/hw/misc/eeprom_cmn.h
+***************
+*** 0 ****
+--- 1,19 ----
++ /*
++  *  @author  Open VXR, openvxr@cisco.com
++  *
++  *  Copyright (c) 2014-2020 by cisco Systems, Inc.
++  *
++  *  This work is licensed under the terms of the GNU GPL, version 2 or later.
++  *  See the COPYING file in the top-level directory.
++  */
++ 
++ #ifndef __EEPROM_CMN_H__
++ #define __EEPROM_CMN_H__
++ typedef int32_t (*EEPROM_RD_CB) ( int32_t who, int32_t type, uint32_t offset, int32_t length, uint8_t* data);
++ 
++ 
++ typedef struct eeprom_board_side_st {
++     EEPROM_RD_CB  cb;
++ } eeprom_board_side_st;
++ 
++ #endif
+*** qemu-4.2.0/hw/misc/obmc_device_common.h.orig
+--- qemu-4.2.0/hw/misc/obmc_device_common.h
+***************
+*** 0 ****
+--- 1,27 ----
++ /*
++  *  @author  Open VXR, openvxr@cisco.com
++  *
++  *  Copyright (c) 2014-2020 by cisco Systems, Inc.
++  *
++  *  This work is licensed under the terms of the GNU GPL, version 2 or later.
++  *  See the COPYING file in the top-level directory.
++  */
++ 
++ #ifndef QEMU_OBMC_DEVICE_COMMON_H
++ #define QEMU_OBMC_DEVICE_COMMON_H
++ #include <fcntl.h>
++ #include <stdio.h>
++ #include <sys/stat.h>
++ #include <unistd.h>
++ 
++ #ifndef I2C_DEVICE_DEBUG
++ #define I2C_DEVICE_DEBUG 0
++ #endif
++ 
++ #if I2C_DEVICE_DEBUG
++ #define DBPRINT(ARGS...) fprintf(stderr, ARGS);
++ #else
++ #define DBPRINT(ARGS...)
++ #endif
++ 
++ #endif // QEMU_OBMC_DEVICE_COMMON_H
+*** qemu-4.2.0/hw/misc/ovxr_xchng.h.orig
+--- qemu-4.2.0/hw/misc/ovxr_xchng.h
+***************
+*** 0 ****
+--- 1,37 ----
++ /*
++  *  @author  Open VXR, openvxr@cisco.com
++  *
++  *  Copyright (c) 2014-2020 by cisco Systems, Inc.
++  *
++  *  This work is licensed under the terms of the GNU GPL, version 2 or later.
++  *  See the COPYING file in the top-level directory.
++  */
++ 
++ #ifndef __OVXR_XCHNG_H__
++ #define __OVXR_XCHNG_H__
++ #include <inttypes.h>
++ #include "simi2c-br.h"
++ 
++ 
++ struct pci_xchng_msg_st {
++     enum { WR_RQ, RD_RQ, RD_RSP, ECHO_RQ,ECHO_RSP,VER_RQ,VER_RSP, INTR_RQ, CFG_WR_RQ, CFG_RD_RQ, CFG_RD_RSP, PIO_WR_RQ, PIO_RD_RQ, PIO_RD_RSP, RST_RQ, INIT_RQ, INIT_RSP };
++     uint16_t _op;
++     uint16_t _rgn;
++     union {
++         struct { uint64_t _adrs; uint32_t _sz; uint64_t _val;} _wr;
++         struct { uint64_t _adrs; uint32_t _sz; uint64_t _val;} _rd;
++         struct { uint32_t _type; uint32_t _val;} _intr;
++         struct { uint32_t _val; } _ver;
++     };
++ };
++ 
++ struct eeprom_xchng_msg_st {
++     enum { RD_RQ, RD_RSP,INIT_RQ, INIT_RSP};
++     uint16_t _op;
++     union {
++         struct { int32_t _type; uint32_t _offs; uint32_t _len;} _rd;
++     };
++ };
++ 
++ 
++ #endif
+*** qemu-4.2.0/hw/misc/simdev.c.orig
+--- qemu-4.2.0/hw/misc/simdev.c
+***************
+*** 0 ****
+--- 1,500 ----
++ /*
++  *  @author  Open VXR, openvxr@cisco.com
++  *
++  *  Copyright (c) 2014-2020 by cisco Systems, Inc.
++  *
++  *  This work is licensed under the terms of the GNU GPL, version 2 or later.
++  *  See the COPYING file in the top-level directory.
++  */
++ 
++ #include "qemu/osdep.h"
++ #include "hw/hw.h"
++ #include "hw/i386/pc.h"
++ #include "hw/pci/pci.h"
++ #include "hw/pci/msi.h"
++ #include "hw/pci/msix.h"
++ #include "sysemu/kvm.h"
++ #include "qapi/qmp/qerror.h"
++ #include "qemu/event_notifier.h"
++ #include "include/chardev/char.h"
++ #include "sysemu/dma.h"
++ #include "qemu/timer.h"
++ 
++ #include <sys/mman.h>
++ #include <sys/types.h>
++ #include <dlfcn.h>
++ 
++ #define TYPE_SIMDEV "simdev"
++ #define SIMDEV(obj) \
++     OBJECT_CHECK(sim_dev_state_st, (obj), TYPE_SIMDEV)
++ 
++ #include "simdev_cmn.h"
++ #include "simdev_api.h"
++ 
++ 
++ 
++ //from bside
++ static 
++ void dev_cfg_wr_1b (void* opq ,uint32_t offs ,uint8_t val) {
++     sim_dev_state_st* sptr = (sim_dev_state_st*)opq;
++     PCIDevice *pci_dev = PCI_DEVICE(sptr);
++     uint8_t* u8ptr = (pci_dev->config+offs);
++         pci_set_byte(u8ptr,val);
++ }
++ static 
++ void dev_cfg_wr_2b (void* opq ,uint32_t offs ,uint16_t val) {
++     sim_dev_state_st* sptr = (sim_dev_state_st*)opq;
++     PCIDevice *pci_dev = PCI_DEVICE(sptr);
++     uint8_t* u8ptr = (pci_dev->config+offs);
++         pci_set_word(u8ptr,val);
++ }
++ static 
++ void dev_cfg_wr_4b (void* opq ,uint32_t offs ,uint32_t val) {
++     sim_dev_state_st* sptr = (sim_dev_state_st*)opq;
++     PCIDevice *pci_dev = PCI_DEVICE(sptr);
++     uint8_t* u8ptr = (pci_dev->config+offs);
++         pci_set_long(u8ptr,val);
++ }
++ static 
++ void dev_cfg_wr_8b (void* opq ,uint32_t offs ,uint64_t val) {
++   printf("FATAL %s: Was called  with bad size = 8\n",__FUNCTION__);
++                     exit(1);
++ }
++ 
++ //from lib
++ static 
++ uint8_t dev_cfg_rd_1b (void* opq ,uint32_t offs ) {
++     sim_dev_state_st* sptr = (sim_dev_state_st*)opq;
++     PCIDevice *pci_dev = PCI_DEVICE(sptr);
++     uint8_t* u8ptr = (pci_dev->config+offs);
++     return pci_get_byte(u8ptr);
++ }
++ static 
++ uint16_t dev_cfg_rd_2b (void* opq ,uint32_t offs ) {
++     sim_dev_state_st* sptr = (sim_dev_state_st*)opq;
++     PCIDevice *pci_dev = PCI_DEVICE(sptr);
++     uint8_t* u8ptr = (pci_dev->config+offs);
++     return pci_get_word(u8ptr);
++ }
++ static 
++ uint32_t dev_cfg_rd_4b (void* opq ,uint32_t offs ) {
++     sim_dev_state_st* sptr = (sim_dev_state_st*)opq;
++     PCIDevice *pci_dev = PCI_DEVICE(sptr);
++     uint8_t* u8ptr = (pci_dev->config+offs);
++     return pci_get_long(u8ptr);
++ }
++ static 
++ uint64_t dev_cfg_rd_8b (void* opq ,uint32_t offs ) {
++     printf("FATAL %s: Was called  with bad size = 8 \n",__FUNCTION__);
++     exit(1);
++ }
++ 
++ 
++ 
++ 
++ static 
++ void dev_intr_fn (void* opq ,uint32_t type ,uint32_t val) {
++     sim_dev_state_st* sptr = (sim_dev_state_st*)opq;
++     PCIDevice *pci_dev = PCI_DEVICE(sptr);
++     if (SIMDEV_INTx == type) {
++         pci_set_irq(pci_dev,val); //val must be 0/1
++     } else if (SIMDEV_MSI == type) {
++         msi_notify(pci_dev,0); //we support just 1 vec
++     } else if (SIMDEV_MSIX == type) {
++         msix_notify(pci_dev,val); 
++     } else {
++         printf("FATAL %s: Was called  with bad intr type=%d value\n",__FUNCTION__,type);
++         exit(1);
++     }
++ }
++ 
++ //local handlers for MMIO
++ static void simdev_mmio_write(
++         void *opq, 
++         hwaddr addr, 
++         uint64_t val, 
++         unsigned size)
++ {
++ 
++     local_rgns_st* rptr = (local_rgns_st*)opq;
++     sim_dev_state_st* s = rptr->opq;
++     DBG(s->log," MMIO writing to addr " TARGET_FMT_plx " Size=%d Data=" TARGET_FMT_plx "\n", addr,size, val);
++ 
++     s->b_side.mmio_wr_cb(
++             s->b_side.rgns[rptr->id].opq, addr, val, size);
++ }
++ 
++ static uint64_t simdev_mmio_read(
++         void *opq, 
++         hwaddr addr, 
++         unsigned size)
++ {
++ 
++     local_rgns_st* rptr = (local_rgns_st*)opq;
++     sim_dev_state_st* s = rptr->opq;
++     uint64_t rdata = 0;
++     DBG(s->log," Enter MMIO reading to addr " TARGET_FMT_plx  " Size=%d  Data=" TARGET_FMT_plx "\n", addr,size, rdata);
++ 
++     rdata = 
++     s->b_side.mmio_rd_cb(
++             s->b_side.rgns[rptr->id].opq, addr,size);
++ 
++     DBG(s->log," Leave MMIO reading to addr " TARGET_FMT_plx  " Size=%d  Data=" TARGET_FMT_plx "\n", addr,size, rdata);
++     return rdata;
++ }
++ 
++ static void simdev_pio_write(
++         void *opq, 
++         hwaddr addr, 
++         uint64_t val, 
++         unsigned size)
++ {
++     local_rgns_st* rptr = (local_rgns_st*)opq;
++     sim_dev_state_st* s = rptr->opq;
++ 
++     DBG(s->log," PIO writing to addr " TARGET_FMT_plx " Size=%d Data=" TARGET_FMT_plx "\n", addr,size, val);
++ 
++     s->b_side.pio_wr_cb(
++             s->b_side.rgns[rptr->id].opq, addr, val, size);
++ }
++ 
++ static uint64_t simdev_pio_read(
++         void *opq, 
++         hwaddr addr, 
++         unsigned size)
++ {
++ 
++     local_rgns_st* rptr = (local_rgns_st*)opq;
++     sim_dev_state_st* s = rptr->opq;
++ 
++     uint64_t rdata = 
++     s->b_side.pio_rd_cb(
++             s->b_side.rgns[rptr->id].opq, addr,size);
++ 
++     DBG(s->log,"PIO reading to addr " TARGET_FMT_plx  " Size=%d  Data=" TARGET_FMT_plx "\n", addr,size, rdata);
++     return rdata;
++ }
++ 
++ static MemoryRegionOps simdev_mmio_ops = {
++     .read = simdev_mmio_read,
++     .write = simdev_mmio_write,
++     .endianness = DEVICE_NATIVE_ENDIAN,
++     .impl = {
++         .min_access_size = 1,
++         .max_access_size = 4,
++     },
++     .valid.min_access_size = 1,
++     .valid.max_access_size = 4,
++ };
++ 
++ static MemoryRegionOps simdev_mmio_ops64 = {
++     .read = simdev_mmio_read,
++     .write = simdev_mmio_write,
++     .endianness = DEVICE_NATIVE_ENDIAN,
++     .impl = {
++         .min_access_size = 1,
++         .max_access_size = 8,
++     },
++     .valid.min_access_size = 1,
++     .valid.max_access_size = 8,
++ };
++ 
++ 
++ static const MemoryRegionOps simdev_pio_ops = {
++     .read = simdev_pio_read,
++     .write = simdev_pio_write,
++     .endianness = DEVICE_NATIVE_ENDIAN,
++     .impl = {
++         .min_access_size = 1,
++         .max_access_size = 4,
++     },
++     .valid.min_access_size = 1,
++     .valid.max_access_size = 4,
++ 
++ };
++ 
++ 
++ static void simdev_write_config(
++         PCIDevice *pci_dev, 
++         uint32_t address, 
++         uint32_t val, 
++         int len)
++ {
++     sim_dev_state_st *s = SIMDEV(pci_dev);
++     //Let the lib know, 
++     s->b_side.cfg_wr_cb(s->lib_opq,address,val,len);
++     //but don't forget to do it for us also..this will also take care of
++     //msi and msix
++     pci_default_write_config(pci_dev, address, val, len);
++ }
++ 
++ static void* simdev_timer_create( int scale,TIMER_EXPIRY_CB* cb,void*opq) {
++     QEMUTimer* ptr=0;
++     if (SCALE_MS == scale) {
++         ptr = timer_new_ms(QEMU_CLOCK_VIRTUAL,cb,opq);
++     }else if (SCALE_US == scale) {
++         ptr = timer_new_us(QEMU_CLOCK_VIRTUAL,cb,opq);
++     }else {
++         ptr = timer_new_ns(QEMU_CLOCK_VIRTUAL,cb,opq);
++     }
++     return ptr;
++ }
++ static int64_t simdev_timer_now (int scale) {
++     int64_t val=0;
++     if (SCALE_MS == scale) {
++         val = qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL);
++     }else if (SCALE_US == scale) {
++         val = qemu_clock_get_us(QEMU_CLOCK_VIRTUAL);
++     }else {
++         val = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
++     }
++     return val;
++ }
++ 
++ static void simdev_timer_modify (void* ptr,int scale, int64_t val) {
++     QEMUTimer* timer = (QEMUTimer*)ptr;
++     if (SCALE_MS == scale) {
++         timer_mod(timer, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + val);
++     }else if (SCALE_US == scale) {
++         timer_mod(timer, qemu_clock_get_us(QEMU_CLOCK_VIRTUAL) + val);
++     }else {
++         timer_mod(timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + val);
++     }
++ }
++ static void simdev_timer_delete (void* ptr) {
++     QEMUTimer* timer = (QEMUTimer*)ptr;
++     timer_del(timer);
++ }
++ static void simdev_timer_free (void* ptr) {
++     QEMUTimer* timer = (QEMUTimer*)ptr;
++     timer_free(timer);
++ }
++ 
++ 
++ int32_t LIB_PCI_DEV_INIT_FN (const char* pfile, board_side_info_st*,const qemu_side_info_st*);
++ void  DO_BOARD_SIDE_INIT (
++         const board_side_info_st*,
++         const qemu_side_info_st*);
++ 
++ static void pci_simdev_init(
++         PCIDevice *dev, Error **errp)
++ {
++ 
++     sim_dev_state_st *s = SIMDEV(dev);
++     s->log.dbg = 0; //default is no debug. Json will have it set if need be
++ 
++     uint8_t *pci_conf;
++ 
++     //register_savevm(DEVICE(dev), "simdev", 0, 0, simdev_save, simdev_load, dev);
++ 
++     qemu_side_info_st qemu_side_st;
++     qemu_side_st.prop_file = s->prop_file;
++     qemu_side_st.opq = s;
++     qemu_side_st.phys_rd_1b_fn = dev_phys_read_1b;
++     qemu_side_st.phys_rd_2b_fn = dev_phys_read_2b;
++     qemu_side_st.phys_rd_4b_fn = dev_phys_read_4b; 
++     qemu_side_st.phys_rd_8b_fn = dev_phys_read_8b; 
++     qemu_side_st.phys_wr_1b_fn = dev_phys_write_1b;
++     qemu_side_st.phys_wr_2b_fn = dev_phys_write_2b; 
++     qemu_side_st.phys_wr_4b_fn = dev_phys_write_4b; 
++     qemu_side_st.phys_wr_8b_fn = dev_phys_write_8b; 
++     qemu_side_st.intr_fn  = dev_intr_fn;
++     qemu_side_st.cfg_wr_1b_fn = dev_cfg_wr_1b;
++     qemu_side_st.cfg_wr_2b_fn = dev_cfg_wr_2b;
++     qemu_side_st.cfg_wr_4b_fn = dev_cfg_wr_4b;
++     qemu_side_st.cfg_wr_8b_fn = dev_cfg_wr_8b;
++     qemu_side_st.cfg_rd_1b_fn = dev_cfg_rd_1b;
++     qemu_side_st.cfg_rd_2b_fn = dev_cfg_rd_2b;
++     qemu_side_st.cfg_rd_4b_fn = dev_cfg_rd_4b;
++     qemu_side_st.cfg_rd_8b_fn = dev_cfg_rd_8b;
++ 
++     qemu_side_st.dma_rd_fn = dev_dma_rd;
++     qemu_side_st.dma_wr_fn = dev_dma_wr;
++ 
++ 
++     qemu_side_st.timer_create_fn  = simdev_timer_create;
++     qemu_side_st.timer_now_fn  = simdev_timer_now;
++     qemu_side_st.timer_modify_fn  = simdev_timer_modify;
++     qemu_side_st.timer_disable_fn  = simdev_timer_delete;
++     qemu_side_st.timer_free_fn  = simdev_timer_free;
++ 
++ 
++     //lets create the log file. 
++ 
++     int32_t rval=0;
++     s->b_side.intr.type = SIMDEV_INTx; //INTX
++ 
++     if (0 != (rval = LIB_PCI_DEV_INIT_FN(s->prop_file,&s->b_side,&qemu_side_st))) {
++         printf("FATAL LIB_PCI_DEV_INIT_FN returned %d \n",rval);
++         exit(1);
++     }
++     //save the lib_opq from above call.
++     s->lib_opq = s->b_side.opq;
++ 
++ 
++     s->log.fl  = s->b_side.log.fl;
++     s->log.dbg = s->b_side.log.dbg;
++ 
++     pci_conf = dev->config;
++     pci_conf[PCI_COMMAND] |= (PCI_COMMAND_IO | PCI_COMMAND_MEMORY);
++     pci_config_set_interrupt_pin(pci_conf, 1);
++ 
++ 
++ 
++     //now look for the regions and instantiate them
++     board_side_info_st* vptr = &(s->b_side);
++ 
++     pci_config_set_vendor_id(dev->config,vptr->vendor_id);
++     pci_config_set_device_id(dev->config,vptr->device_id);
++     
++     //set multifunction device capability
++     if (vptr->mf) {
++         dev->cap_present |= QEMU_PCI_CAP_MULTIFUNCTION;
++         pci_conf[PCI_HEADER_TYPE] |= 0x80;
++         printf("INFO  %s: Setting QEMU_PCI_CAP_MULTIFUNCTION\n",s->b_side.nm);
++     }
++ 
++ 
++     MemoryRegionOps* mmio_ptr;
++ 
++     if (8 == vptr->max_asz) {
++         mmio_ptr = &simdev_mmio_ops64;
++         printf("INFO  %s: Setting MAX Access to 64-bit\n",s->b_side.nm);
++     }
++     else {
++         mmio_ptr = &simdev_mmio_ops;
++     }
++ 
++     uint32_t idx=0;
++     for (idx=0; idx < 6; idx ++) { 
++         if (vptr->rgns[idx].size) { //valid size implied valid region
++             //printf("Creating region [%d] with size=0x" TARGET_FMT_plx " attr=0x%x\n", vptr->rgns[idx].id, vptr->rgns[idx].size, vptr->rgns[idx].attr); fflush(stdout);
++             PRNT(s->log,"Creating region [%d] with size=0x" TARGET_FMT_plx " attr=0x%x\n", vptr->rgns[idx].id, vptr->rgns[idx].size, vptr->rgns[idx].attr);
++ 
++             //create a local st and use that as opq
++             local_rgns_st* optr = g_malloc0(sizeof(local_rgns_st));
++             optr->id = idx;
++             optr->opq = s;
++             char nm [20]; 
++             if (PCI_BASE_ADDRESS_SPACE_IO & vptr->rgns[idx].attr) {
++                 sprintf(nm,"simdev-pio-%d",idx);
++                 memory_region_init_io(&(s->mmios[idx]), OBJECT(s), 
++                         &simdev_pio_ops, optr,
++                         nm, vptr->rgns[idx].size);
++                 PRNT(s->log,"\tregion [%d] is PIO\n", vptr->rgns[idx].id);
++             }else {
++                 sprintf(nm,"simdev-mmio-%d",idx);
++                 memory_region_init_io(&(s->mmios[idx]), OBJECT(s), 
++                         mmio_ptr, optr,
++                         nm, vptr->rgns[idx].size);
++                 PRNT(s->log,"\tregion [%d] is MMIO\n", vptr->rgns[idx].id);
++             }
++ 
++             pci_register_bar(dev, 
++                     idx, vptr->rgns[idx].attr, &(s->mmios[idx]));
++         }
++     }
++     dev->config_write = simdev_write_config;
++ 
++     if (SIMDEV_INTx == vptr->intr.type) {
++         //do nothing
++     } else if (SIMDEV_MSI == vptr->intr.type) {
++         PRNT(s->log,"Calling msi_init with cap offs=0x%x with num_vec=%d  \n", vptr->intr.cap_offs,vptr->intr.num_vec );
++         //save the next cap offs and write it back
++         uint32_t first_cap = pci_conf[0x34];
++         uint32_t next_hop = pci_conf[vptr->intr.cap_offs+1];
++         msi_init(dev,vptr->intr.cap_offs,vptr->intr.num_vec,true,false,NULL);
++         pci_conf[vptr->intr.cap_offs+1]=next_hop;
++         pci_conf[0x34]=first_cap;
++ 
++     } else if (SIMDEV_MSIX == vptr->intr.type) {
++         if ((vptr->intr.tbl_bar > 5) || (vptr->intr.pba_bar > 5) || (0 == vptr->rgns[vptr->intr.tbl_bar].size) || (0 == vptr->rgns[vptr->intr.pba_bar].size)) {
++             printf("*ERROR*%s: For msix tab bar %d pba bar =%d should be in 0..5 and have non 0 bar size.. tab bar size=%d pba bar size=%d \n",__FUNCTION__,vptr->intr.tbl_bar,vptr->intr.pba_bar,(uint32_t)vptr->rgns[vptr->intr.tbl_bar].size,(uint32_t)vptr->rgns[vptr->intr.pba_bar].size);
++             exit(1);
++         }
++         PRNT(s->log,"Calling msix_init with cap offs=0x%x with num_vec=%d tbl_bar=%d tbl_offs=0x%x pba_bar=%d pba_offs=0x%x  \n", vptr->intr.cap_offs,vptr->intr.num_vec,vptr->intr.tbl_bar,vptr->intr.tbl_offs,vptr->intr.pba_bar,vptr->intr.pba_offs );
++         uint32_t first_cap = pci_conf[0x34];
++         uint32_t next_hop = pci_conf[vptr->intr.cap_offs+1];
++         Error *err = NULL;
++         msix_init(dev,vptr->intr.num_vec,&(s->mmios[vptr->intr.tbl_bar]),vptr->intr.tbl_bar,vptr->intr.tbl_offs,&(s->mmios[vptr->intr.pba_bar]),vptr->intr.pba_bar,vptr->intr.pba_offs,vptr->intr.cap_offs, &err);
++         pci_conf[vptr->intr.cap_offs+1]=next_hop;
++         pci_conf[0x34]=first_cap;
++     } else {
++         printf("FATAL INTR type=%d is invalid\n",vptr->intr.type);
++         exit(1);
++     }
++ 
++     //now let the other side know and wait for init completion.
++     PRNT(s->log,"Calling DO_BOARD_SIDE_INIT for=%s\n",s->prop_file);
++     printf("Calling DO_BOARD_SIDE_INIT for=%s\n",s->prop_file);
++     DO_BOARD_SIDE_INIT(&s->b_side,&qemu_side_st);
++     PRNT(s->log,"DONE DO_BOARD_SIDE_INIT for=%s\n",s->prop_file);
++     printf("DONE DO_BOARD_SIDE_INIT for=%s\n",s->prop_file); fflush(stdout);
++ 
++ }
++ 
++ static void pci_simdev_uninit(
++         PCIDevice *dev)
++ {
++     sim_dev_state_st *s = SIMDEV(dev);
++     uint32_t idx=0;
++     board_side_info_st* vptr = &(s->b_side);
++     for (idx=0; idx < 6; idx ++) {
++         if (vptr->rgns[idx].size) { //valid size implied valid region
++             // memory_region_destroy((&s->mmios[idx]));
++ 			// looks like deprecated subroutine -- openvxr investigate
++ 			;
++         }
++     }
++ }
++ 
++ static Property simdev_properties[] = {
++     DEFINE_PROP_STRING("prop", sim_dev_state_st, prop_file),
++     DEFINE_PROP_END_OF_LIST(),
++ };
++ 
++ static const VMStateDescription vmstate_sim_dev = {
++     .name = "sim_dev",
++     .version_id = 0,
++     .minimum_version_id = 0,
++     .fields = (VMStateField[]) {
++         VMSTATE_PCI_DEVICE(parent_obj, sim_dev_state_st),
++         VMSTATE_END_OF_LIST()
++     }
++ };
++ 
++ 
++ static void simdev_class_init(ObjectClass *klass, void *data)
++ {
++     DeviceClass *dc = DEVICE_CLASS(klass);
++     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
++ 
++     //may be we should not assume all are PCIE devices. For now 
++     //it is ok. 
++     // skorka: k->is_express = 1;
++     k->realize = pci_simdev_init;
++     k->exit = pci_simdev_uninit;
++     k->class_id = PCI_CLASS_MEMORY_RAM;
++     dc->reset = simdev_reset;
++     dc->props = simdev_properties;
++     dc->vmsd = &vmstate_sim_dev;
++     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
++ }
++ 
++ static const TypeInfo simdev_info = {
++     .name          = TYPE_SIMDEV,
++     .parent        = TYPE_PCI_DEVICE,
++     .instance_size = sizeof(sim_dev_state_st),
++     .class_init    = simdev_class_init,
++     .interfaces = (InterfaceInfo[]) {
++         { INTERFACE_PCIE_DEVICE },
++         { },
++     },
++ };
++ 
++ static void simdev_register_types (void)
++ {
++     type_register_static(&simdev_info);
++ }
++ 
++ type_init(simdev_register_types)
+*** qemu-4.2.0/hw/misc/simdev_api.h.orig
+--- qemu-4.2.0/hw/misc/simdev_api.h
+***************
+*** 0 ****
+--- 1,209 ----
++ /*
++  *  @author  Open VXR, openvxr@cisco.com
++  *
++  *  Copyright (c) 2014-2020 by cisco Systems, Inc.
++  *
++  *  This work is licensed under the terms of the GNU GPL, version 2 or later.
++  *  See the COPYING file in the top-level directory.
++  */
++ 
++ typedef struct sim_dev_state_st {
++     /*< private >*/
++ #ifdef SIM_I2C_DEV
++     I2CSlave parent_obj;
++ #else 
++     PCIDevice parent_obj;
++ #endif
++ 
++     /*< public >*/
++     MemoryRegion    mmios[6];
++     char*           prop_file;
++     board_side_info_st   b_side;
++     void*           lib_opq; //use when calling dev lib's CB
++     log_st          log;
++ 
++ #ifdef SIM_I2C_DEV
++     /* I2C Slave specific */
++     char* adrs_bytes;
++     uint8_t reg_id;
++     uint8_t rw;
++     uint8_t adr_ptr;
++     uint8_t adr_buf[4];
++     uint8_t data_ptr;
++     uint8_t data_buf[4];
++     qemu_irq pin;
++     uint32_t debug;
++ #endif
++ 
++ 
++ } sim_dev_state_st;
++ 
++ 
++ //We will use during device registration
++ typedef struct local_rgns_st {
++     uint32_t          id;
++     sim_dev_state_st* opq;
++ } local_rgns_st;
++ 
++ //library shall call this to do actual physical writes 
++ static 
++ void dev_phys_write_1b (
++         void* opq, 
++         uint64_t pa, 
++         uint8_t val) __attribute__((unused));
++ void dev_phys_write_1b (
++         void* opq, 
++         uint64_t pa, 
++         uint8_t val) {
++     //sim_dev_state_st* ds = (sim_dev_state_st*)opq;
++     stb_phys(&address_space_memory, pa, val);
++     
++ }
++ static 
++ void dev_phys_write_2b (
++         void* opq, 
++         uint64_t pa, 
++         uint16_t val) __attribute__((unused));
++ void dev_phys_write_2b (
++         void* opq, 
++         uint64_t pa, 
++         uint16_t val) {
++     sim_dev_state_st* ds = (sim_dev_state_st*)opq;
++     if (DEVICE_BIG_ENDIAN == ds->b_side.endianess) {
++       stw_be_phys(&address_space_memory, pa, val);
++     }else {
++       stw_le_phys(&address_space_memory, pa, val);
++     }
++ }
++ static 
++ void dev_phys_write_4b (
++         void* opq, 
++         uint64_t pa, 
++         uint32_t val) __attribute__((unused));
++ void dev_phys_write_4b (
++         void* opq, 
++         uint64_t pa, 
++         uint32_t val) {
++     sim_dev_state_st* ds = (sim_dev_state_st*)opq;
++     if (DEVICE_BIG_ENDIAN == ds->b_side.endianess) {
++       stl_be_phys(&address_space_memory, pa, val);
++     }else {
++       stl_le_phys(&address_space_memory, pa, val);
++     }
++ }
++ static 
++ void dev_phys_write_8b (
++         void* opq, 
++         uint64_t pa, 
++         uint64_t val) __attribute__((unused));
++ void dev_phys_write_8b (
++         void* opq, 
++         uint64_t pa, 
++         uint64_t val) {
++     sim_dev_state_st* ds = (sim_dev_state_st*)opq;
++     if (DEVICE_BIG_ENDIAN == ds->b_side.endianess) {
++       stq_be_phys(&address_space_memory, pa, val);
++     }else {
++       stq_le_phys(&address_space_memory, pa, val);
++     }
++ }
++ 
++ //now reads
++ static 
++ uint8_t dev_phys_read_1b (
++         void* opq, 
++         uint64_t pa) __attribute__((unused));
++ uint8_t dev_phys_read_1b (
++         void* opq, 
++         uint64_t pa) {
++     return ldub_phys(&address_space_memory, pa);
++ }
++ 
++ static 
++ uint16_t dev_phys_read_2b (
++         void* opq, 
++         uint64_t pa) __attribute__((unused));
++ uint16_t dev_phys_read_2b (
++         void* opq, 
++         uint64_t pa) {
++     sim_dev_state_st* ds = (sim_dev_state_st*)opq;
++     if (DEVICE_BIG_ENDIAN == ds->b_side.endianess) {
++         return lduw_be_phys(&address_space_memory, pa);
++     }
++     return lduw_le_phys(&address_space_memory, pa);
++ }
++ static 
++ uint32_t dev_phys_read_4b (
++         void* opq, 
++         uint64_t pa) __attribute__((unused));
++ uint32_t dev_phys_read_4b (
++         void* opq, 
++         uint64_t pa) {
++     sim_dev_state_st* ds = (sim_dev_state_st*)opq;
++     if (DEVICE_BIG_ENDIAN == ds->b_side.endianess) {
++         return ldl_be_phys(&address_space_memory, pa);
++     }
++     return ldl_le_phys(&address_space_memory, pa);
++ }
++ static 
++ uint64_t dev_phys_read_8b (
++         void* opq, 
++         uint64_t pa) __attribute__((unused));
++ uint64_t dev_phys_read_8b (
++         void* opq, 
++         uint64_t pa) {
++     sim_dev_state_st* ds = (sim_dev_state_st*)opq;
++     if (DEVICE_BIG_ENDIAN == ds->b_side.endianess) {
++         return ldq_be_phys(&address_space_memory, pa);
++     }
++     return ldq_le_phys(&address_space_memory, pa);
++ }
++ 
++ static 
++ int32_t dev_dma_rd (
++         void* opq,
++         uint64_t adrs,
++         void* buf,
++         uint64_t len) __attribute__((unused));
++ int32_t dev_dma_rd (
++         void* opq,
++         uint64_t adrs,
++         void* buf,
++         uint64_t len) {
++     //sim_dev_state_st* sptr = (sim_dev_state_st*)opq;
++     //PCIDevice *pci_dev = PCI_DEVICE(sptr);
++     //return pci_dma_read(pci_dev,adrs,buf,len);
++     return dma_memory_read(&address_space_memory,adrs,buf,len);
++ }
++ 
++ static 
++ int32_t dev_dma_wr (
++         void* opq,
++         uint64_t adrs,
++         const void* buf,
++         uint64_t len) __attribute__((unused));
++ int32_t dev_dma_wr (
++         void* opq,
++         uint64_t adrs,
++         const void* buf,
++         uint64_t len) {
++     //sim_dev_state_st* sptr = (sim_dev_state_st*)opq;
++     //PCIDevice *pci_dev = PCI_DEVICE(sptr);
++     //return pci_dma_write(pci_dev,adrs,buf,len);
++     return dma_memory_write(&address_space_memory,adrs,buf,len);
++ }
++ 
++ 
++ static 
++ void simdev_reset(
++         DeviceState *d) __attribute__((unused));
++ void simdev_reset(
++         DeviceState *d)
++ {
++     sim_dev_state_st *s = SIMDEV(d);
++     //Let the lib know, 
++     if (s->b_side.rst_cb) {
++       s->b_side.rst_cb(s->lib_opq);
++     }
++ }
++ 
+*** qemu-4.2.0/hw/misc/simdev_cmn.h.orig
+--- qemu-4.2.0/hw/misc/simdev_cmn.h
+***************
+*** 0 ****
+--- 1,152 ----
++ /*
++  *  @author  Open VXR, openvxr@cisco.com
++  *
++  *  Copyright (c) 2014-2020 by cisco Systems, Inc.
++  *
++  *  This work is licensed under the terms of the GNU GPL, version 2 or later.
++  *  See the COPYING file in the top-level directory.
++  */
++ 
++ //Types of interrups. 
++ enum { SIMDEV_INTx, SIMDEV_MSI, SIMDEV_MSIX };
++ 
++ //types of device
++ enum { DEV_PCI, DEV_I2C, DEV_EEPROM, DEV_I2C_BR };
++ 
++ typedef struct {
++     FILE* fl;
++     uint8_t dbg;
++ } log_st;
++ 
++ #define PRNT(st,fmt, ...)        \
++     if (st.fl) {do {fprintf(st.fl,fmt, ## __VA_ARGS__); fflush(st.fl); } while (0);}
++ 
++ #define DBG(st,fmt, ...)        \
++     if (st.fl) {do {if(st.dbg){fprintf(st.fl,fmt, ## __VA_ARGS__); fflush(st.fl);} } while (0);}
++ //Every PCI devie has 6 bars/regiosn. Each region is identified by its "id"
++ //Has certain "attributes"  such as men/IO/64-bit etc.. 
++ typedef struct rgns_st {
++     uint32_t id;
++     uint32_t attr; //ORed value
++     uint64_t size; //size 0 implies not valid.. overloading this
++     void*    opq;
++ } rgns_st;
++ 
++ typedef struct intr_st {
++     int type; //0 is intx ;1 msi ; 2 msix 
++     int cap_offs; //valid if type is 1/2.. capability offset
++     int num_vec; //should be 1 for msi 
++     int tbl_bar;  //valid for msix
++     int pba_bar;  //valid for msix
++     uint32_t tbl_offs;  //valid for msix
++     uint32_t pba_offs;  //valid for msix
++ }intr_st;
++ 
++ //these 2 CB are given by device lib to this device. So when PCI cfg 
++ //reads and writes happens, the device in turn will call library's CB
++ typedef uint64_t (*QEMU_RD_CB)(void*,uint64_t,unsigned);
++ typedef void     (*QEMU_WR_CB)(void*,uint64_t,uint64_t,unsigned);
++ 
++ //Device provides thise CB to the library. Library in turn will 
++ //use these for doing phys reads and writes
++ typedef void     (*PHYS_WR_1B)(void*,uint64_t,uint8_t);
++ typedef void     (*PHYS_WR_2B)(void*,uint64_t,uint16_t);
++ typedef void     (*PHYS_WR_4B)(void*,uint64_t,uint32_t);
++ typedef void     (*PHYS_WR_8B)(void*,uint64_t,uint64_t);
++ 
++ typedef uint8_t  (*PHYS_RD_1B)(void*,uint64_t);
++ typedef uint16_t (*PHYS_RD_2B)(void*,uint64_t);
++ typedef uint32_t (*PHYS_RD_4B)(void*,uint64_t);
++ typedef uint64_t (*PHYS_RD_8B)(void*,uint64_t);
++ 
++ //DMA 
++ typedef int32_t  (*DMA_RD)(void*, uint64_t,void*, uint64_t);
++ typedef int32_t  (*DMA_WR)(void*, uint64_t,const void*, uint64_t);
++ 
++ //opq and qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)
++ //typedef int64_t  (*QEMU_TIMER_CB)(void*,int64_t);
++ 
++ //void*, type, value .. type 0=intx,1->msi, 2->msix
++ typedef void     (*INTR_CB)(void*,uint32_t,uint32_t);
++ 
++ //PCI config read and writes CB that'll be provided by the device and
++ //used by library
++ 
++ typedef void     (*CFG_WR_1B) (void*, uint32_t, uint8_t);
++ typedef void     (*CFG_WR_2B) (void*, uint32_t, uint16_t);
++ typedef void     (*CFG_WR_4B) (void*, uint32_t, uint32_t);
++ typedef void     (*CFG_WR_8B) (void*, uint32_t, uint64_t);
++ typedef uint8_t  (*CFG_RD_1B) (void*, uint32_t );
++ typedef uint16_t (*CFG_RD_2B) (void*, uint32_t); 
++ typedef uint32_t (*CFG_RD_4B) (void*, uint32_t);
++ typedef uint64_t (*CFG_RD_8B) (void*, uint32_t);
++ 
++ 
++ 
++ //address, val, len. Will be used by simdev -> lib
++ typedef void (*CFG_WR_CB) (void*, uint32_t , uint32_t , int );
++ 
++ typedef void (*RST_CB) (void*);
++ 
++ typedef  void     TIMER_EXPIRY_CB(void*); 
++ typedef  void*   (*TIMER_CREATE_CB)(int ,TIMER_EXPIRY_CB*,void*); 
++ typedef  int64_t (*TIMER_CUR_TIME_CB)(int ); 
++ typedef  void    (*TIMER_MODIFY_CB)(void*, int , int64_t);
++ typedef  void    (*TIMER_DISABLE_CB)(void*);
++ typedef  void    (*TIMER_FREE_CB)(void*);
++ 
++ 
++ //this is the information we (simdev) give to the library
++ typedef struct qemu_side_info_st {
++     char* prop_file;
++     void* opq; //will be used when calling the following
++     PHYS_RD_1B  phys_rd_1b_fn; 
++     PHYS_RD_2B  phys_rd_2b_fn; 
++     PHYS_RD_4B  phys_rd_4b_fn; 
++     PHYS_RD_8B  phys_rd_8b_fn; 
++     PHYS_WR_1B  phys_wr_1b_fn; 
++     PHYS_WR_2B  phys_wr_2b_fn; 
++     PHYS_WR_4B  phys_wr_4b_fn; 
++     PHYS_WR_8B  phys_wr_8b_fn; 
++     INTR_CB     intr_fn;
++     CFG_WR_1B   cfg_wr_1b_fn;
++     CFG_WR_2B   cfg_wr_2b_fn;
++     CFG_WR_4B   cfg_wr_4b_fn;
++     CFG_WR_8B   cfg_wr_8b_fn;
++     CFG_RD_1B   cfg_rd_1b_fn;
++     CFG_RD_2B   cfg_rd_2b_fn;
++     CFG_RD_4B   cfg_rd_4b_fn;
++     CFG_RD_8B   cfg_rd_8b_fn;
++     DMA_RD      dma_rd_fn;
++     DMA_WR      dma_wr_fn;
++ 
++     TIMER_CREATE_CB   timer_create_fn;
++     TIMER_CUR_TIME_CB timer_now_fn;
++     TIMER_MODIFY_CB   timer_modify_fn;
++     TIMER_DISABLE_CB  timer_disable_fn;
++     TIMER_FREE_CB     timer_free_fn;
++ } qemu_side_info_st;
++ 
++ typedef struct board_side_info_st {
++     uint16_t  device_id;
++     uint16_t  vendor_id;
++     uint32_t  endianess; //0 native, 1 BE, 2 LE
++     rgns_st  rgns[6];
++     QEMU_WR_CB mmio_wr_cb;
++     QEMU_RD_CB mmio_rd_cb;
++     QEMU_WR_CB pio_wr_cb;
++     QEMU_RD_CB pio_rd_cb;
++     CFG_WR_CB  cfg_wr_cb;
++     RST_CB     rst_cb;
++     intr_st    intr;
++     void*      opq; //assign this to lib_opq
++     char*      nm;
++     log_st     log;
++     uint32_t   mf; //mutifunction capable 0 or 1
++     uint32_t   max_asz; // max access size .. 4 or 8
++     int        dev_type;
++ 
++ } board_side_info_st;
++ 
++ 
++ 
+*** qemu-4.2.0/hw/misc/simi2c-br.c.orig
+--- qemu-4.2.0/hw/misc/simi2c-br.c
+***************
+*** 0 ****
+--- 1,255 ----
++ /*
++  *  @author  Open VXR, openvxr@cisco.com
++  *
++  *  Copyright (c) 2014-2020 by cisco Systems, Inc.
++  *
++  *  This work is licensed under the terms of the GNU GPL, version 2 or later.
++  *  See the COPYING file in the top-level directory.
++  */
++ 
++ #include "qemu/osdep.h"
++ #include "hw/hw.h"
++ #include "hw/i2c/i2c.h"
++ #include "qapi/error.h"
++ #include "qapi/visitor.h"
++ #include "qemu/log.h"
++ #define I2C_DEVICE_DEBUG 0
++ #include "obmc_device_common.h"
++ #include "simi2c-br.h"
++ 
++ #define NUM_BUSES 8
++ 
++ const char * i2cbr_op[] = {
++ 		"I2CBR_INIT_RQ",
++ 		"I2CBR_INIT_RSP",
++ 		"I2CBR_BUSY",
++ 		"I2CBR_START",
++ 		"I2CBR_END",
++ 		"I2CBR_NACK",
++ 		"I2CBR_SEND",
++ 		"I2CBR_RECV",
++ 		"I2CBR_RECV_RSP",
++ 		"I2CBR_RESET"
++ };
++ 
++ typedef struct {
++     DeviceState parent;
++     /*state */
++     I2CBus *buses[NUM_BUSES];
++     int32_t _whoami;
++ } SimI2cBr;
++ 
++ #define TYPE_SIMI2CBR "simi2c-br"
++ 
++ #define SIMI2CBR(obj) \
++      OBJECT_CHECK(SimI2cBr, (obj), TYPE_SIMI2CBR)
++ 
++ #ifndef SIMI2CBR_DEBUG
++ #define SIMI2CBR_DEBUG 0
++ #endif
++ 
++ #define DB_PRINT(fmt, args...) do { \
++     if (SIMI2CBR_DEBUG) { \
++         qemu_log("SIMI2CBR: "fmt, ## args); \
++     } \
++ } while (0);
++ 
++ // exposed APIs to operate I2C bus
++ void * get_simi2cbr(void);
++ 
++ int simi2cbr_bus_busy(void *i2c, int bus_id);
++ int simi2cbr_start_transfer(void *i2c, int bus_id, uint8_t address, int recv);
++ void simi2cbr_end_transfer(void *i2c, int bus_id);
++ void simi2cbr_nack(void *i2c, int bus_id);
++ int simi2cbr_send(void *i2c, int bus_id, uint8_t data);
++ int simi2cbr_recv(void *i2c, int bus_id);
++ void simi2cbr_reset_bus(void *i2c, int bus_id);
++ 
++ 
++ int simi2cbr_bus_busy(void *i2c, int bus_id)
++ {
++     DBPRINT("%s\n",__FUNCTION__);
++     SimI2cBr *s = SIMI2CBR(i2c);
++     assert(bus_id < NUM_BUSES);
++     return i2c_bus_busy(s->buses[bus_id]);
++ }
++ int simi2cbr_recv(void *i2c, int bus_id)
++ {
++     DBPRINT("%s\n",__FUNCTION__);
++     SimI2cBr *s = SIMI2CBR(i2c);
++     assert(bus_id < NUM_BUSES);
++     int ret = 0;
++     ret |= i2c_recv(s->buses[bus_id]);
++     DB_PRINT("recieving from active bus %d:%x\n", bus_id, ret);
++     return ret;
++ }
++ int simi2cbr_send(void *i2c, int bus_id, uint8_t data)
++ {
++     DBPRINT("%s, 0x%x\n",__FUNCTION__, data);
++     SimI2cBr *s = SIMI2CBR(i2c);
++     assert(bus_id < NUM_BUSES);
++     int ret = -1;
++     ret &= i2c_send(s->buses[bus_id], data);
++     DB_PRINT("sending to active bus %d:%x\n", bus_id, data);
++     return ret;
++ }
++ int simi2cbr_start_transfer(void *i2c, int bus_id, uint8_t address, int recv){
++     DBPRINT("%s, address=0x%x\n",__FUNCTION__, address);
++     SimI2cBr *s = SIMI2CBR(i2c);
++     assert(bus_id < NUM_BUSES);
++     int ret = i2c_start_transfer(s->buses[bus_id], address, recv);
++     DB_PRINT("starting a %s transfer to active bus %d adr 0x%x\n", recv?"rx":"tx", bus_id, address);
++     return ret;
++ }
++ void simi2cbr_end_transfer(void *i2c, int bus_id){
++     DBPRINT("%s, bus_id 0x%x\n",__FUNCTION__, bus_id);
++     SimI2cBr *s = SIMI2CBR(i2c);
++     assert(bus_id < NUM_BUSES);
++     i2c_end_transfer(s->buses[bus_id]);
++     DB_PRINT("ending transfer to active bus %d\n", bus_id);
++ }
++ void simi2cbr_nack(void *i2c, int bus_id){
++     DBPRINT("%s, bus_id 0x%x\n",__FUNCTION__, bus_id);
++     SimI2cBr *s = SIMI2CBR(i2c);
++     assert(bus_id < NUM_BUSES);
++     i2c_nack(s->buses[bus_id]);
++     DB_PRINT("sending NACK to active bus %d\n", bus_id);
++ }
++ void simi2cbr_reset_bus(void *i2c, int bus_id)
++ {
++ 	DBPRINT("%s, bus_id 0x%x\n",__FUNCTION__, bus_id);
++ 	SimI2cBr *s = SIMI2CBR(i2c);
++ 	assert(bus_id < NUM_BUSES);
++ 	qbus_reset_all(&(s->buses[bus_id]->qbus));
++ 	printf("I2CBR reset bus %d\n", bus_id);
++ }
++ 
++ static void * _simi2c_br_ptr = 0;
++ void * get_simi2cbr(void)
++ {
++ 	return _simi2c_br_ptr;
++ }
++ 
++ static void simi2cbr_reset(DeviceState *dev)
++ {
++ }
++ // static int simi2cbr_init(I2CSlave *i2c)
++ // {
++ // DBPRINT("%s\n",__FUNCTION__);
++ //     SimI2cBr *s = SIMI2CBR(i2c);
++ 
++ //     qdev_init_gpio_out(&i2c->qdev, &s->pin, 1);
++ 
++ //     simi2cbr_reset(i2c);
++ 
++ //     return 0;
++ // }
++ static void simi2cbr_inst_init(Object *obj)
++ {
++ DBPRINT("%s\n",__FUNCTION__);
++ }
++ 
++ int32_t i2cbr_ovxr_handler(i2cbr_op_st* op_ptr) {
++     SimI2cBr *s = (SimI2cBr*) op_ptr->_opq;
++     i2cbr_xchng_msg_st* xptr = op_ptr->_xchng;
++     if (I2CBR_BUSY == xptr->_op) {
++     	DB_PRINT("%s I2CBR_BUSY\n", __FUNCTION__);
++         xptr->_rval = simi2cbr_bus_busy(s,xptr->_bus_id);
++     }else if (I2CBR_START == xptr->_op) {
++     	DB_PRINT("%s I2CBR_START bus_id=%d adr=0x%x recv_flag=%d\n",
++     			__FUNCTION__, xptr->_bus_id,xptr->_data,xptr->_flag);
++        xptr->_rval = simi2cbr_start_transfer(s,xptr->_bus_id,xptr->_data,xptr->_flag);
++     }else if (I2CBR_END == xptr->_op) {
++     	DB_PRINT("%s I2CBR_END\n", __FUNCTION__);
++        simi2cbr_end_transfer(s,xptr->_bus_id);
++     }else if (I2CBR_NACK == xptr->_op) {
++     	DB_PRINT("%s I2CBR_NACK\n", __FUNCTION__);
++        simi2cbr_nack(s, xptr->_bus_id);
++     }else if (I2CBR_SEND == xptr->_op) {
++     	DB_PRINT("%s I2CBR_SEND bus_id=%d data=0x%x\n",
++     			__FUNCTION__, xptr->_bus_id,xptr->_data);
++        xptr->_rval = simi2cbr_send(s, xptr->_bus_id,xptr->_data);
++     }else if (I2CBR_RECV == xptr->_op) {
++     	DB_PRINT("%s I2CBR_RECV bus_id=%d \n", __FUNCTION__, xptr->_bus_id);
++        xptr->_rval = simi2cbr_recv(s, xptr->_bus_id);
++        DB_PRINT("%s I2CBR_RECV bus_id=%d rval=0x%d\n",
++     		   __FUNCTION__, xptr->_bus_id, xptr->_rval);
++     }else if (I2CBR_RESET== xptr->_op) {
++     	DB_PRINT("%s I2CBR_RESET\n", __FUNCTION__);
++       simi2cbr_reset_bus(s,xptr->_bus_id);
++     }else {
++         printf("%s ERROR invalid op=%d\n",__FUNCTION__,xptr->_op); fflush(stdout);
++     }
++     return 0;
++ }
++ 
++ int32_t LIB_I2C_BR_DEV_INIT_FN (int32_t who, void* opq);
++ void  DO_I2C_BR_BOARD_SIDE_INIT (int32_t who);
++ 
++ 
++ static void simi2cbr_realize(DeviceState *dev, Error **errp)
++ {
++ 	DBPRINT("%s\n",__FUNCTION__);
++ 	SimI2cBr *s = SIMI2CBR(dev);
++ 	int i;
++ 
++ 	for (i = 0; i < NUM_BUSES; ++i) {
++ 	    char bus_name[256];
++ 	    snprintf(bus_name, sizeof(bus_name),
++ 	    "simi2c.br.%d", i);
++ 	    s->buses[i] = i2c_init_bus(dev, bus_name);
++ 	}
++ 	_simi2c_br_ptr = s;
++ 
++         int32_t rval=0;
++         if (0 != (rval = LIB_I2C_BR_DEV_INIT_FN(s->_whoami,s))) {
++             printf("FATAL LIB_I2C_BR_DEV_INIT_FN returned %d \n",rval);
++             exit(1);
++         }
++         DO_I2C_BR_BOARD_SIDE_INIT(s->_whoami);
++ }
++ 
++ static const VMStateDescription vmstate_SIMI2CBR = {
++     .name = "simi2c-br",
++     .version_id = 0,
++     .minimum_version_id = 0,
++    .fields = (VMStateField[]) {
++         VMSTATE_END_OF_LIST()
++     }
++ };
++ 
++ static Property simi2cbr_properties[] = {
++     /* These could be GPIOs, but the application is rare, just let machine model
++      * tie them with props
++      */
++ //    DEFINE_PROP_UINT8("busid", SimI2cBr, bus_id, 0),
++     DEFINE_PROP_INT32("who", SimI2cBr, _whoami, -1),
++     DEFINE_PROP_END_OF_LIST(),
++ };
++ 
++ static void simi2cbr_class_init(ObjectClass *klass, void *data)
++ {
++ DBPRINT("%s\n",__FUNCTION__);
++     DeviceClass *dc = DEVICE_CLASS(klass);
++ 
++     dc->realize = simi2cbr_realize;
++     dc->reset = simi2cbr_reset;
++     dc->vmsd = &vmstate_SIMI2CBR;
++     dc->props = simi2cbr_properties;
++     dc->desc = "SIMI2CBR I2C MUX";
++ }
++ 
++ static TypeInfo simi2cbr_info = {
++     .name          = TYPE_SIMI2CBR,
++     .parent        = TYPE_I2C_SLAVE,
++     .instance_size = sizeof(SimI2cBr),
++     .instance_init = simi2cbr_inst_init,
++     .class_init    = simi2cbr_class_init,
++ };
++ 
++ static void simi2cbr_register_types(void)
++ {
++     type_register_static(&simi2cbr_info);
++ }
++ 
++ type_init(simi2cbr_register_types)
+*** qemu-4.2.0/hw/misc/simi2c-br.h.orig
+--- qemu-4.2.0/hw/misc/simi2c-br.h
+***************
+*** 0 ****
+--- 1,41 ----
++ /*
++  *  @author  Open VXR, openvxr@cisco.com
++  *
++  *  Copyright (c) 2014-2020 by cisco Systems, Inc.
++  *
++  *  This work is licensed under the terms of the GNU GPL, version 2 or later.
++  *  See the COPYING file in the top-level directory.
++  */
++ 
++ #ifndef __SIMI2C_BR_H__
++ #define __SIMI2C_BR_H__
++ #include <inttypes.h>
++ 
++ 
++ enum { I2CBR_INIT_RQ, I2CBR_INIT_RSP, I2CBR_BUSY, I2CBR_START, I2CBR_END, I2CBR_NACK, I2CBR_SEND, I2CBR_RECV, I2CBR_RECV_RSP, I2CBR_RESET};
++ 
++ struct i2cbr_xchng_msg_st {
++     uint16_t _op;
++     int32_t _bus_id;
++     uint8_t _data; //overloaded as address for START
++     uint8_t _flag;
++     int32_t _rval; 
++ };
++ typedef struct i2cbr_xchng_msg_st i2cbr_xchng_msg_st;
++ 
++ //given to handler 
++ struct i2cbr_op_st {
++     void*              _opq;
++     i2cbr_xchng_msg_st* _xchng;
++ };
++ typedef struct i2cbr_op_st i2cbr_op_st;
++ 
++ #ifdef __cplusplus
++ extern "C" {
++ #endif
++ int32_t i2cbr_ovxr_handler(i2cbr_op_st*);
++ #ifdef __cplusplus
++ }
++ #endif
++ 
++ #endif
+*** qemu-4.2.0/hw/misc/simi2cdev.c.orig
+--- qemu-4.2.0/hw/misc/simi2cdev.c
+***************
+*** 0 ****
+--- 1,332 ----
++ /*
++  *  @author  Open VXR, openvxr@cisco.com
++  *
++  *  Copyright (c) 2014-2020 by cisco Systems, Inc.
++  *
++  *  This work is licensed under the terms of the GNU GPL, version 2 or later.
++  *  See the COPYING file in the top-level directory.
++  */
++ 
++ #include "qemu/osdep.h"
++ #include "hw/hw.h"
++ #include "hw/i2c/i2c.h"
++ #include "hw/pci/pci.h"
++ #include "sysemu/kvm.h"
++ #include "qapi/qmp/qerror.h"
++ #include "qemu/event_notifier.h"
++ #include "include/chardev/char.h"
++ #include "sysemu/dma.h"
++ 
++ #include <sys/mman.h>
++ #include <sys/types.h>
++ #include <dlfcn.h>
++ 
++ #define TYPE_SIMDEV "simi2cdev"
++ #define SIMDEV(obj) \
++     OBJECT_CHECK(sim_dev_state_st, (obj), TYPE_SIMDEV)
++ 
++ #define SIM_I2C_DEV 1
++ #include "simdev_cmn.h"
++ #include "simdev_api.h"
++ 
++ 
++ 
++ 
++ 
++ 
++ static 
++ void dev_intr_fn (void* opq ,uint32_t type ,uint32_t val) {
++     sim_dev_state_st* s = (sim_dev_state_st*)opq;
++     if (SIMDEV_INTx == type) {
++     	qemu_set_irq(s->pin, val); //val must be 0/1
++     } else {
++         printf("FATAL %s: Was called  with bad intr type=%d value\n",__FUNCTION__,type);
++         exit(1);
++     }
++ }
++ 
++ //local handlers for MMIO
++ static void simdev_i2c_write(
++ 		sim_dev_state_st* s,
++         hwaddr addr,
++         uint64_t val,
++         unsigned size){
++ 
++     DBG(s->log," MMIO writing to addr " TARGET_FMT_plx " Size=%d Data=" TARGET_FMT_plx "\n", addr,size, val);
++ 
++     s->b_side.mmio_wr_cb(s->lib_opq, addr, val, size);
++ }
++ static uint64_t simdev_i2c_read(
++ 		sim_dev_state_st* s,
++ 		hwaddr addr,
++ 		unsigned size)
++ {
++     uint64_t rdata = 0;
++     DBG(s->log," Enter MMIO reading to addr " TARGET_FMT_plx  " Size=%d  Data=" TARGET_FMT_plx "\n", addr,size, rdata);
++ 
++     rdata =
++     s->b_side.mmio_rd_cb(s->lib_opq, addr,size);
++ 
++     DBG(s->log," Leave MMIO reading to addr " TARGET_FMT_plx  " Size=%d  Data=" TARGET_FMT_plx "\n", addr,size, rdata);
++     return rdata;
++ }
++ 
++ 
++ int32_t LIB_I2C_DEV_INIT_FN (const char* pfile, board_side_info_st*,const qemu_side_info_st*);
++ void  DO_BOARD_SIDE_INIT (
++         const board_side_info_st*,
++         const qemu_side_info_st*);
++ 
++ 
++ 
++ static void simdev_i2c_init(DeviceState *dev, Error **errp)
++ {
++ 
++     sim_dev_state_st *s = SIMDEV(dev);
++ 
++ 
++     qemu_side_info_st q_side;
++     q_side.prop_file = s->prop_file;
++     q_side.opq = s;
++     q_side.phys_rd_1b_fn = dev_phys_read_1b;
++     q_side.phys_rd_2b_fn = dev_phys_read_2b;
++     q_side.phys_rd_4b_fn = dev_phys_read_4b; 
++     q_side.phys_rd_8b_fn = dev_phys_read_8b; 
++     q_side.phys_wr_1b_fn = dev_phys_write_1b;
++     q_side.phys_wr_2b_fn = dev_phys_write_2b; 
++     q_side.phys_wr_4b_fn = dev_phys_write_4b; 
++     q_side.phys_wr_8b_fn = dev_phys_write_8b; 
++     q_side.intr_fn  = dev_intr_fn;
++     q_side.cfg_wr_1b_fn = NULL;
++     q_side.cfg_wr_2b_fn = NULL;
++     q_side.cfg_wr_4b_fn = NULL;
++     q_side.cfg_wr_8b_fn = NULL;
++     q_side.cfg_rd_1b_fn = NULL;
++     q_side.cfg_rd_2b_fn = NULL;
++     q_side.cfg_rd_4b_fn = NULL;
++     q_side.cfg_rd_8b_fn = NULL;
++ 
++     q_side.dma_rd_fn = dev_dma_rd;
++     q_side.dma_wr_fn = dev_dma_wr;
++ 
++ 
++     //lets create the log file. 
++ 
++     int32_t rval=0;
++     s->b_side.intr.type = SIMDEV_INTx; //INTX
++     s->b_side.rgns[0].id = s->parent_obj.address; // use rgns[0].id
++ 
++     if (0 != (rval = LIB_I2C_DEV_INIT_FN(s->prop_file,&s->b_side,&q_side))) {
++         printf("FATAL LIB_I2C_DEV_INIT_FN returned %d \n",rval);
++         exit(1);
++     }
++ 
++ 
++     //save the lib_opq from above call.
++     s->lib_opq = s->b_side.opq;
++ 
++     s->log.fl  = s->b_side.log.fl;
++     s->log.dbg = s->b_side.log.dbg | s->debug;
++ 
++     //now let the other side know and wait for init completion.
++     PRNT(s->log,"Calling DO_I2C_DEV_BOARD_SIDE_INIT\n");
++     DO_BOARD_SIDE_INIT(&s->b_side,&q_side);
++ 
++     PRNT(s->log, "%s end\n", __FUNCTION__);
++ 
++ }
++ 
++ static hwaddr sim_dev_get_addr(sim_dev_state_st *s)
++ {
++ DBG(s->log, "%s, adr_buf[3:0] %x %x %x %x cur %d reg=%d\n", __FUNCTION__,
++         s->adr_buf[3], s->adr_buf[2], s->adr_buf[1], s->adr_buf[0],
++         s->adr_ptr, s->reg_id);
++ return (s->adr_buf[3] << 24) |
++             (s->adr_buf[2] << 16) |
++             (s->adr_buf[1] << 8) |
++             (s->adr_buf[0] << 0);
++ }
++ static uint32_t sim_dev_get_data(sim_dev_state_st *s)
++ {
++ DBG(s->log, "%s, data_buf[3:0] %x %x %x %x cur %d reg=%d\n", __FUNCTION__,
++         s->data_buf[3], s->data_buf[2], s->data_buf[1], s->data_buf[0],
++         s->data_ptr, s->reg_id);
++ return (s->data_buf[3] << 24) |
++             (s->data_buf[2] << 16) |
++             (s->data_buf[1] << 8) |
++             (s->data_buf[0] << 0);
++ }
++ static uint8_t  sim_dev_i2c_rx(I2CSlave *i2c)
++ {
++     sim_dev_state_st *s = SIMDEV(i2c);
++ 
++ 	DBG(s->log, "%s, reg=%d\n", __FUNCTION__, s->reg_id);
++ 	switch (s->reg_id){
++ 	case 0:
++         return s->rw;
++     	break;
++ 	case 1:
++ 	case 2:
++ 	case 3:
++ 	case 4:
++ 	    if (s->adr_ptr < 4) {
++             return s->adr_buf[s->adr_ptr];
++ 		}
++         else {
++             return 0xff;
++ 		}
++ 	    break;
++ 	case 5:
++ 	case 6:
++ 	case 7:
++ 	case 8:
++ 		if(0 == s->data_ptr){
++ 			uint64_t rd_data = simdev_i2c_read(s, sim_dev_get_addr(s), 4);
++ 			s->data_buf[0] = (rd_data >> 0) & 0xff;
++ 			s->data_buf[1] = (rd_data >> 8) & 0xff;
++ 			s->data_buf[2] = (rd_data >> 16)  & 0xff;
++ 			s->data_buf[3] = (rd_data >> 24)  & 0xff;
++ 		}
++ 	    if (s->data_ptr < 4)
++ 	        return s->data_buf[s->data_ptr++];
++ 	    else
++ 	        return 0xff;
++ 	    break;
++ 	default:
++ 	    break;
++ 	}
++     return 0xff;
++ }
++ static int sim_dev_i2c_tx(I2CSlave *i2c, uint8_t data)
++ {
++     sim_dev_state_st *s = SIMDEV(i2c);
++ 
++ 	DBG(s->log, "%s, data=0x%x reg=%d\n", __FUNCTION__, data, s->reg_id);
++ 	switch (s->reg_id){
++ 	case 0:
++ 	    s->rw = data;
++ 	    if (data == 0)
++             simdev_i2c_write(s, sim_dev_get_addr(s), sim_dev_get_data(s), 4);
++     	break;
++ 	case 1:
++ 	case 2:
++ 	case 3:
++ 	case 4:
++         if (s->adr_ptr < 4) {
++             DBG(s->log, "%s, adr_buf[%d] = 0x%x reg=%d\n", __FUNCTION__, s->adr_ptr,data,s->reg_id);
++             s->adr_buf[s->adr_ptr++] = data;
++         }
++ 	    break;
++ 	case 5:
++ 	case 6:
++ 	case 7:
++ 	case 8:
++ 	    if (s->data_ptr < 4){
++             DBG(s->log, "%s, data_buf[%d] = 0x%x reg=%d\n", __FUNCTION__, s->data_ptr,data,s->reg_id);
++ 	        s->data_buf[s->data_ptr++] = data;
++ 	    }
++ 	    break;
++ 	default:
++ 	    break;
++ 	}
++ 
++     return 0;
++ }
++ 
++ static int sim_dev_i2c_event(I2CSlave *i2c, enum i2c_event event)
++ {
++     sim_dev_state_st *s = SIMDEV(i2c);
++ 
++ 	DBG(s->log, "%s : %d reg=%d\n", __FUNCTION__, event, s->reg_id);
++ 	switch (s->reg_id){
++ 	case 0:
++ 		// Read data on sim_dev_i2c_rx since case 0 is not access in some FPGA device
++     	break;
++ 	case 1:
++ 	case 2:
++ 	case 3:
++ 	case 4:
++         	s->adr_ptr = 0;
++ 	    break;
++ 	case 5:
++ 	case 6:
++ 	case 7:
++ 	case 8:
++         	s->data_ptr = 0;
++ 	    break;
++ 	default:
++ 	    break;
++ 	}
++ 
++         return 0;
++ }
++ 
++ static int sim_dev_decode_address(I2CSlave *i2c, uint8_t address)
++ {
++     sim_dev_state_st *s = SIMDEV(i2c);
++     s->reg_id = address - i2c->address;    
++     DBG(s->log, "%s : address=%x, reg_id=%d\n", __FUNCTION__, address, s->reg_id);
++ 
++     return 0;
++ }
++ 
++ static Property simdev_properties[] = {
++     DEFINE_PROP_STRING("prop", sim_dev_state_st, prop_file),
++     DEFINE_PROP_STRING("adrs_bytes", sim_dev_state_st, adrs_bytes),
++     DEFINE_PROP_UINT32("debug",sim_dev_state_st,debug,0),
++     DEFINE_PROP_END_OF_LIST(),
++ };
++ 
++ static const VMStateDescription vmstate_sim_dev = {
++     .name = "sim_i2c_dev",
++     .version_id = 0,
++     .minimum_version_id = 0,
++     .fields = (VMStateField[]) {
++     	VMSTATE_I2C_SLAVE(parent_obj, sim_dev_state_st),
++         VMSTATE_UINT8(reg_id, sim_dev_state_st),
++         VMSTATE_UINT8(rw, sim_dev_state_st),
++         VMSTATE_UINT8(adr_ptr, sim_dev_state_st),
++         VMSTATE_UINT8_ARRAY(adr_buf, sim_dev_state_st, 4),
++         VMSTATE_UINT8(data_ptr, sim_dev_state_st),
++         VMSTATE_UINT8_ARRAY(data_buf, sim_dev_state_st, 4),
++         VMSTATE_END_OF_LIST()
++     }
++ };
++ 
++ 
++ static void simdev_class_init(ObjectClass *klass, void *data)
++ {
++     DeviceClass *dc = DEVICE_CLASS(klass);
++     I2CSlaveClass *k = I2C_SLAVE_CLASS(klass);
++ 
++     //may be we should not assume all are PCIE devices. For now 
++     //it is ok. 
++     dc->realize = simdev_i2c_init;
++ //    k->class_id = PCI_CLASS_MEMORY_RAM;
++     k->event = sim_dev_i2c_event;
++     k->recv = sim_dev_i2c_rx;
++     k->send = sim_dev_i2c_tx;
++     k->decode_address = sim_dev_decode_address;
++     dc->reset = simdev_reset;
++     dc->props = simdev_properties;
++     dc->vmsd = &vmstate_sim_dev;
++     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
++ }
++ 
++ static const TypeInfo simdev_info = {
++     .name          = TYPE_SIMDEV,
++     .parent        = TYPE_I2C_SLAVE,
++     .instance_size = sizeof(sim_dev_state_st),
++     .class_init    = simdev_class_init,
++     .interfaces = (InterfaceInfo[]) {
++         { INTERFACE_CONVENTIONAL_PCI_DEVICE },
++         { },
++     },
++ };
++ 
++ static void simdev_register_types (void)
++ {
++     type_register_static(&simdev_info);
++ }
++ 
++ type_init(simdev_register_types)
+*** qemu-4.2.0/hw/misc/simdev_plus.cpp.orig
+--- qemu-4.2.0/hw/misc/simdev_plus.cpp
+***************
+*** 0 ****
+--- 1,1168 ----
++ /*
++  *  @author  Open VXR, openvxr@cisco.com
++  *
++  *  Copyright (c) 2014-2020 by cisco Systems, Inc.
++  *
++  *  This work is licensed under the terms of the GNU GPL, version 2 or later.
++  *  See the COPYING file in the top-level directory.
++  */
++ 
++ #include <iostream>
++ #include <filereadstream.h>
++ #include <document.h>
++ #include <inttypes.h>
++ #include <unistd.h>
++ #include <vector>
++ #include <map>
++ #include <sstream>
++ #include <string>
++ #include <fstream>
++ #include "simdev_cmn.h"
++ 
++ //for shm
++ #include <sys/mman.h>
++ #include <sys/stat.h>
++ #include <fcntl.h>
++ 
++ 
++ #include <sys/types.h>
++ #include <unistd.h>
++ 
++ #include <pthread.h>
++ #include <errno.h>
++ 
++ #include <stdlib.h>
++ 
++ #include <stdio.h>
++ #include <string.h>
++ 
++ #include <dirent.h> 
++ 
++ 
++ #include "eeprom_cmn.h"
++ #include "ovxr_xchng.h"
++ #include "simi2c-br.h"
++ 
++ 
++ #define MAX_NUM_REGIONS 6
++ 
++ using namespace rapidjson;
++ using namespace std;
++ 
++ static const char* INTR_STR[] __attribute__ ((unused)) = { "INTX", "MSI", "MSIX" };
++ 
++ 
++ struct rgn_opq_st {
++     void* dev_ptr;
++     uint32_t  rgn_id;
++     string    nm;
++     rgn_opq_st() :
++         dev_ptr(0), rgn_id(0),nm("UNKOWN")
++     { 
++     }
++     ~rgn_opq_st() {
++     }
++ };
++ 
++ 
++ //When user provides device configs via json file, we'll save each in
++ //this structure. 
++ struct cfg_st {
++     uint32_t offs; //must be < 4K
++     uint32_t sz;  //should be one of 1,2,or 4
++     //depends on above sz 
++     union {
++         uint8_t u8;
++         uint16_t u16;
++         uint32_t u32;
++     };
++     cfg_st(uint32_t offs_i,uint32_t sz_i,uint32_t val) :
++         offs(offs_i), sz(sz_i) {
++         if (1==sz) { u8 = val; } 
++         if (2==sz) { u16 = val; } 
++         if (4==sz) { u32 = val; } 
++     }
++ } ;
++ typedef cfg_st* cfg_st_ptr;
++ 
++ struct json_rgn_st {
++     uint8_t _rgn_id;
++     uint32_t _attr;
++     uint32_t _size;
++     json_rgn_st() { _rgn_id=0; _attr=0; _size=0; }
++ };
++ 
++ struct json_contents_st {
++     string desc; //description 
++     string dev_nm; //device name 
++     string dbg; //debug
++     string who_am_i; //unique ID  ..0..124
++     string dev_inst; //instance 
++     string dev_mf; //which function in MF . no MF is -1
++     string max_asz; //max access size 
++     string cfg_file;  //external config file of format offs sz data
++     string endian;  //one of NATIVE/BIG/LITTLE
++     vector <cfg_st*> cfgs; //individual config entry
++     vector <json_rgn_st> rgn_sts; //individual region entry
++     intr_st intr;  //interrupt info
++     json_contents_st() :
++         desc("PLEASE PROVIDE DESCRIPTION"),
++         dev_nm("BAD_DEV_NM"),
++         dbg("0"),
++         who_am_i("-1"),
++         dev_inst("0"),
++         dev_mf("-1"),
++         max_asz("4"),
++         cfg_file("NONE"),
++         endian("NATIVE"),
++         cfgs(),
++         rgn_sts(),
++         intr()
++     {
++         intr.type=SIMDEV_INTx;
++         intr.cap_offs=0; intr.num_vec=0; intr.tbl_bar=0; intr.pba_bar=0;
++         intr.tbl_offs=0; intr.pba_offs=0;
++     }
++ };
++ 
++ 
++ static char readBuffer[50000];
++ int32_t parse_json_file (
++         const char* jf,
++         json_contents_st& json) {
++ 		char buf[ 1024 ];
++ 
++     if (0 != access(jf,F_OK)) {
++         printf("*FATAL*: OVXR access failed file=%s in pwd=%s\n",jf,
++ 		  getcwd( buf, sizeof(buf) - 1 ) );
++         exit(1);
++     }
++ 
++     FILE* fp = fopen(jf, "rb"); // non-Windows use "r"
++     if (0 == fp) {
++         printf("*FATAL*:OVXR Unable to open file=%s in pwd=%s\n",jf,
++ 		  getcwd( buf, sizeof(buf) - 1 ) );
++         exit(1);
++     }
++     FileReadStream is(fp, readBuffer, sizeof(readBuffer));
++     Document d;
++     d.ParseStream(is);
++ 
++     if (0 == d.HasMember("DESC")) {
++         cout << "*FATAL*:" << jf << ":You should have \"DESC\" attribute." << endl;
++         return -1;
++     }
++     if (0 == d.HasMember("DEV_NM")) {
++         cout << "*FATAL*:" << jf << ":You should have \"DEV_NM\" attribute." << endl;
++         return -1;
++     }
++     if (0 == d.HasMember("DEV_INST")) {
++         cout << "*FATAL*:" << jf << ":You should have \"DEV_INST\" attribute." << endl;
++         return -1;
++     }
++     if (0 == d.HasMember("WHO_AM_I")) {
++         cout << "*FATAL*:" << jf << ":You should have \"WHO_AM_I\" attribute." << endl;
++         return -1;
++     }
++     if (0 == d.HasMember("CFGS")) {
++         cout << "*FATAL*:" << jf << ":You should have \"CFGS\" attribute." << endl;
++         return -1;
++     }
++     if (0 == d.HasMember("RGN_CFGS")) {
++         cout << "*FATAL*:" << jf << ":You should have \"RGN_CFGS\" attribute." << endl;
++         return -1;
++     }
++ 
++     if (0 == d.HasMember("INTR")) {
++         cout << "*FATAL*:" << jf << ":You should have \"INTR\" attribute." << endl;
++         return -1;
++     }
++ 
++     if (0 == d.HasMember("CFG_FILE")) {
++         cout << "*FATAL*:" << jf << ":You should have \"CFG_FILE\" attribute." << endl;
++         return -1;
++     }
++ 
++     Value& desc = d["DESC"];
++     json.desc = desc.GetString();
++ 
++     Value& dev_nm = d["DEV_NM"];
++     json.dev_nm = dev_nm.GetString();
++ 
++     Value& who_am_i = d["WHO_AM_I"];
++     json.who_am_i = who_am_i.GetString();
++ 
++     Value& dev_inst = d["DEV_INST"];
++     json.dev_inst = dev_inst.GetString();
++ 
++     if (0 == d.HasMember("DEV_MF")) {
++         json.dev_mf.assign("-1");
++     }else {
++         Value& mf = d["DEV_MF"];
++         json.dev_mf = mf.GetString();
++     }
++ 
++     if (0 == d.HasMember("MAX_ASZ")) {
++         json.max_asz.assign("4");
++     }else {
++         Value& asz = d["MAX_ASZ"];
++         json.max_asz = asz.GetString();
++     }
++ 
++     if (0 == d.HasMember("DBG")) {
++         json.dbg.assign("0");
++     }else {
++         Value& dbg = d["DBG"];
++         json.dbg = dbg.GetString();
++     }
++     Value& intr = d["INTR"];
++     json.intr.type = -1;
++     json.intr.cap_offs = -1 ;
++     json.intr.num_vec = 0; 
++     json.intr.tbl_bar = -1; 
++     json.intr.pba_bar = -1 ;
++     json.intr.tbl_offs = 0;  
++     json.intr.pba_offs = 0; 
++ 
++     for (Value::ConstMemberIterator itr = intr.MemberBegin();
++             itr != intr.MemberEnd(); ++itr)
++     {
++         string nm = itr->name.GetString();
++         string rhs = itr->value.GetString();
++         if ("TYPE" == nm) {
++             if (!(("INTX" == rhs)  || ("MSI" == rhs) || ("MSIX" == rhs))){
++                 cout << "*FATAL*:" << jf << ": INTR type (" << rhs << ") should be one of \"INTX/MSI/MSIX\"." << endl;
++                 return -1;
++             }
++             if ("INTX" == rhs) { 
++                 json.intr.type = SIMDEV_INTx;
++             }else if ("MSI" == rhs) {
++                 json.intr.type = SIMDEV_MSI;
++             }else {
++                 json.intr.type = SIMDEV_MSIX;
++             }
++         }else if ("NUM_VEC" == nm) {
++             json.intr.num_vec = atoi(rhs.c_str());
++         }else if ("CAP_OFFS" == nm) {
++             sscanf(rhs.c_str(),"%x",&json.intr.cap_offs);
++         }else if ("TBL_BAR" == nm) {
++             sscanf(rhs.c_str(),"%d",&json.intr.tbl_bar);
++         }else if ("PBA_BAR" == nm) {
++             sscanf(rhs.c_str(),"%d",&json.intr.pba_bar);
++         }else if ("TBL_OFFS" == nm) {
++             sscanf(rhs.c_str(),"%x",&json.intr.tbl_offs);
++         }else if ("PBA_OFFS" == nm) {
++             sscanf(rhs.c_str(),"%x",&json.intr.pba_offs);
++         }else {
++             printf("*FATAL*:%s: Not supporting attribute %s under \"INTR\"\n",jf,nm.c_str());
++             return -1;
++         }
++     }
++ 
++     Value& cfg_file = d["CFG_FILE"];
++     json.cfg_file = cfg_file.GetString();
++ 
++     if (! (("none" == json.cfg_file) || ("NONE" == json.cfg_file))) {
++         ifstream ifs(json.cfg_file.c_str());
++         if (!ifs.good()) { 
++             printf("*FATAL*:%s: Unable to open CFG_FILE (%s) for reading\n",jf,json.cfg_file.c_str());
++             return -1;
++         }
++         uint32_t l_num = 0;
++         while(ifs.good()) {
++             string str;
++             if (! (ifs >> str)) {
++                 printf("*FATAL*:%s: Bad read in CFG_FILE (%s) in line num = %d\n",jf,json.cfg_file.c_str(), l_num);
++             }
++             uint32_t offs, sz, val;
++                     sscanf(str.c_str(),"%x %d %x",&offs,&sz, &val);
++                     if(! ((1 == sz) || (2 == sz) || (4 == sz))) {
++                         printf("*FATAL*:%s: CFG entry has bad sz(%d) value in line num=%d in CFG_FILE (%s). Allowed are 1/2/4\n",jf,sz,l_num,json.cfg_file.c_str());
++                         return -1;
++                     }
++                     json.cfgs.push_back(new cfg_st(offs,sz,val));
++                     l_num ++;
++                     }
++         ifs.close();
++     }
++ 
++ 
++     const Value& cfgs = d["CFGS"];
++     for (SizeType idx = 0; idx < cfgs.Size(); idx ++) {
++         string str = cfgs[idx].GetString();
++         uint32_t offs, sz, val;
++         sscanf(str.c_str(),"%x %d %x",&offs,&sz, &val);
++         if(! ((1 == sz) || (2 == sz) || (4 == sz))) {
++             printf("*FATAL*:%s: CFG entry has bad sz(%d) value. Allowed are 1/2/4\n",jf,sz);
++             return -1;
++         }
++         json.cfgs.push_back(new cfg_st(offs,sz,val));
++     }
++ 
++ 
++     for (int32_t idx=0; idx < MAX_NUM_REGIONS; idx ++) {
++         json_rgn_st st;
++         st._rgn_id=idx; st._size = 0; st._attr = 0;
++         json.rgn_sts.push_back(st);
++     }
++     const Value& rgn_sts = d["RGN_CFGS"];
++     for (SizeType idx = 0; idx < rgn_sts.Size(); idx ++) {
++         string str = rgn_sts[idx].GetString();
++         uint32_t rgn_id, sz, attr;
++         //printf("%s: sscanf %s \n",__FUNCTION__,str.c_str());
++         sscanf(str.c_str(),"%d %x %x",&rgn_id,&attr, &sz);
++         json.rgn_sts[rgn_id]._rgn_id = rgn_id;
++         json.rgn_sts[rgn_id]._size = sz;
++         json.rgn_sts[rgn_id]._attr = attr;
++     }
++     for (int32_t idx=0; idx < MAX_NUM_REGIONS; idx ++) {
++         //printf("%s: RGN=%d sz=0x%x attr=0x%x\n",__FUNCTION__,json.rgn_sts[idx]._rgn_id,json.rgn_sts[idx]._size,json.rgn_sts[idx]._attr);
++      }
++ 
++ 
++ 
++     fclose(fp);
++     return 0;
++ }
++ 
++ 
++ 
++ typedef struct shmem_ipc_st  shmem_ipc_st;
++ typedef struct shmem_ipc_st* shmem_ipc_st_ptr;
++ 
++ 
++ #define NUM_DEVICES          128
++ //- _idx - _who_am_i 
++ #define SHMEM_ELEM_DATA_SZ   (128-sizeof(uint32_t)-sizeof(int32_t))
++ #define SHMEM_ELEM_Q_SZ      1000
++ typedef struct shmem_elem_st  {
++ 
++     uint32_t _idx;
++     int32_t _who_am_i;
++     char _data[SHMEM_ELEM_DATA_SZ];
++     shmem_elem_st() {
++         _idx=0; _who_am_i=-1;
++         memset(_data,0,sizeof(_data));
++     }
++ } shmem_elem_st;
++ typedef struct shmem_elem_st* shmem_elem_st_ptr;
++ 
++ 
++ 
++ shmem_ipc_st_ptr 
++ shmem_ipc_open(char const* name, 
++          uint32_t max_count, 
++          uint32_t element_size,
++          uint32_t max_devs);
++ 
++ void shmem_ipc_close(
++         shmem_ipc_st_ptr sptr);
++ 
++ 
++ bool shmem_ipc_set_req(
++         shmem_ipc_st_ptr sptr, 
++         shmem_elem_st_ptr elem);
++ 
++         
++ bool shmem_ipc_get_resp(
++         shmem_ipc_st_ptr sptr, 
++         shmem_elem_st_ptr element);
++ 
++ bool shmem_ipc_set_eeprom_req(
++         shmem_ipc_st_ptr sptr, 
++         shmem_elem_st_ptr elem,
++         const uint32_t len,
++         const uint8_t* data);
++ 
++ bool shmem_ipc_get_eeprom_resp(
++         shmem_ipc_st_ptr sptr, 
++         const uint32_t len,
++         uint8_t* data) ;
++ 
++ 
++ 
++ 
++ static pthread_t _bside_thread_handl;
++ static void* bside_req_server (void*);
++ 
++ struct shmem_ipc_control_st {
++   pthread_mutex_t _lock;
++   volatile uint32_t       _rd_idx;
++   volatile uint32_t       _wr_idx;
++   volatile bool           _qside_rsp_set;
++   volatile bool           _dma_in_use;
++   volatile bool           _waiting_for_cv_signal;
++   volatile pthread_cond_t _bside_cv;
++   pthread_mutex_t         _bside_cv_lock;
++   volatile int32_t        _bside_rq_set;
++   volatile int32_t        _bside_rsp_set;
++   char                    _data[0];
++ };
++ 
++ 
++ struct shmem_ipc_st {
++   uint32_t _elem_sz;
++   uint32_t _max_rq_sz;
++   char* _nm;
++   int _fd;
++   uint32_t _mmap_sz;
++   bool     _created; //tells you if we created or opened. 
++   struct shmem_ipc_control_st* _rq_ctrl;
++   void* _rsp_ptr;
++   void* _bside_rq_ptr;
++   void* _bside_rsp_ptr;
++   void* _data_ptr; //dma/data of 1 MB
++ };
++ 
++ static
++ shmem_ipc_st_ptr shmem_ipc_cmn(
++         char const* name, 
++         uint32_t max_count, 
++         uint32_t elem_sz,
++         uint32_t n_devs) {
++   shmem_ipc_st_ptr s_ptr=0;
++ 
++   s_ptr = new(shmem_ipc_st);
++   s_ptr-> _elem_sz = elem_sz;
++   uint32_t sz = (max_count * elem_sz); //for req 
++   s_ptr->_max_rq_sz = sz;
++   sz +=  elem_sz;    //for qside rsp
++   sz +=  elem_sz;    //for bside req. 1 at a time
++   sz +=  elem_sz;    //for bside rsp
++   sz +=  (1024*1024) ; //dma/data 
++   s_ptr->_mmap_sz = sz + sizeof(struct shmem_ipc_control_st);
++   s_ptr->_nm = strdup(name);
++ 
++   s_ptr->_fd = shm_open(name, O_RDWR, S_IRUSR | S_IWUSR);
++ 
++   if (-1 == s_ptr->_fd) {
++       free(s_ptr->_nm);
++       delete s_ptr;
++       return 0;
++   }
++ 
++   printf("initialized queue %s, created = false\n", name);
++ 
++   s_ptr->_rq_ctrl = (struct shmem_ipc_control_st*)mmap(NULL, s_ptr->_mmap_sz, PROT_READ | PROT_WRITE, MAP_SHARED, s_ptr->_fd, 0);
++   if (s_ptr->_rq_ctrl == MAP_FAILED) {
++       close(s_ptr->_fd);
++       free(s_ptr->_nm);
++       delete s_ptr;
++       return 0;
++   }
++ 
++   s_ptr->_rsp_ptr =  ((uint8_t*)  s_ptr->_rq_ctrl->_data)+s_ptr->_max_rq_sz;
++   s_ptr->_bside_rq_ptr =  ((uint8_t*)  s_ptr->_rsp_ptr)+elem_sz;
++   s_ptr->_bside_rsp_ptr =  ((uint8_t*)  s_ptr->_bside_rq_ptr)+(elem_sz);
++   s_ptr->_data_ptr =  ((uint8_t*)  s_ptr->_bside_rsp_ptr)+(elem_sz);
++   //printf("data=%p rsp=%p rmt_rq=%p rmt_rsp=%p dma=%p\n", s_ptr->_rq_ctrl->_data,s_ptr->_rsp_ptr,s_ptr->_bside_rq_ptr,s_ptr->_bside_rsp_ptr,s_ptr->_data_ptr);
++ 
++   //note that rq_ctrl is intialized on BSIDE. So don't worry.
++ 
++   //lets start the thread for request from pthread.
++   if (0 != pthread_create( &_bside_thread_handl, NULL, bside_req_server, (void*) s_ptr)) {
++       printf("ERROR pthread_create faile for bside_req_server\n"); fflush(stdout);
++       munmap(s_ptr->_rq_ctrl, s_ptr->_mmap_sz);
++       close(s_ptr->_fd);
++       free(s_ptr->_nm);
++       delete s_ptr;
++       return 0;
++   }
++ 
++   return s_ptr;
++ }
++ 
++ 
++ shmem_ipc_st_ptr 
++ shmem_ipc_open(char const* name, 
++          uint32_t max_count, 
++          uint32_t element_size,
++          uint32_t n_devs) {
++     return (shmem_ipc_cmn(name,max_count,element_size,n_devs));
++ }
++ 
++ 
++ bool shmem_ipc_set_req(
++         shmem_ipc_st_ptr s_ptr, 
++         shmem_elem_st_ptr e_ptr) {
++   pthread_mutex_lock(&s_ptr->_rq_ctrl->_lock);
++ 
++   if (s_ptr->_rq_ctrl->_wr_idx - s_ptr->_rq_ctrl->_rd_idx >= s_ptr->_max_rq_sz) {
++     pthread_mutex_unlock(&s_ptr->_rq_ctrl->_lock);
++   printf("%s WARN No more space wr=%d rd=%d\n",__FUNCTION__,s_ptr->_rq_ctrl->_wr_idx, s_ptr->_rq_ctrl->_rd_idx);
++     return false; // no more space
++   }
++ 
++   memcpy(&s_ptr->_rq_ctrl->_data[s_ptr->_rq_ctrl->_wr_idx % s_ptr->_max_rq_sz], e_ptr,s_ptr->_elem_sz);
++   s_ptr->_rq_ctrl->_wr_idx += s_ptr-> _elem_sz;
++   //printf("%s wr=%d rd=%d\n",__FUNCTION__,s_ptr->_rq_ctrl->_wr_idx, s_ptr->_rq_ctrl->_rd_idx); fflush(stdout);
++   pthread_mutex_unlock(&s_ptr->_rq_ctrl->_lock);
++   return true;
++ }
++ 
++ 
++ bool shmem_ipc_get_resp(
++         shmem_ipc_st_ptr s_ptr, 
++         shmem_elem_st_ptr e_ptr) {
++   pthread_mutex_lock(&s_ptr->_rq_ctrl->_lock);
++ 
++   if (not s_ptr->_rq_ctrl->_qside_rsp_set) {
++     pthread_mutex_unlock(&s_ptr->_rq_ctrl->_lock);
++     return false; //no resp available yet
++   }
++ 
++   memcpy(e_ptr,(char*)(s_ptr->_rsp_ptr),s_ptr->_elem_sz);
++   s_ptr->_rq_ctrl->_qside_rsp_set=0;
++   pthread_mutex_unlock(&s_ptr->_rq_ctrl->_lock);
++   return true;
++ }
++ 
++ bool shmem_ipc_set_eeprom_req(
++         shmem_ipc_st_ptr s_ptr, 
++         shmem_elem_st_ptr e_ptr,
++         const uint32_t len,
++         const uint8_t* data) {
++     pthread_mutex_lock(&s_ptr->_rq_ctrl->_lock);
++     //make sure dma region is free
++     if(s_ptr->_rq_ctrl->_dma_in_use) {
++       pthread_mutex_unlock(&s_ptr->_rq_ctrl->_lock);
++       return false;
++     }
++     if (s_ptr->_rq_ctrl->_wr_idx - s_ptr->_rq_ctrl->_rd_idx >= s_ptr->_max_rq_sz) {
++         pthread_mutex_unlock(&s_ptr->_rq_ctrl->_lock);
++         printf("%s WARN No more space wr=%d rd=%d\n",__FUNCTION__,s_ptr->_rq_ctrl->_wr_idx, s_ptr->_rq_ctrl->_rd_idx);
++         return false; // no more space
++     }
++     s_ptr->_rq_ctrl->_dma_in_use = 1; //will be cleared in response
++     memcpy(&s_ptr->_rq_ctrl->_data[s_ptr->_rq_ctrl->_wr_idx % s_ptr->_max_rq_sz], e_ptr,s_ptr->_elem_sz);
++     s_ptr->_rq_ctrl->_wr_idx += s_ptr-> _elem_sz;
++     //printf("%s wr=%d rd=%d\n",__FUNCTION__,s_ptr->_rq_ctrl->_wr_idx, s_ptr->_rq_ctrl->_rd_idx); fflush(stdout);
++     memcpy(s_ptr->_data_ptr,data,len);
++     pthread_mutex_unlock(&s_ptr->_rq_ctrl->_lock);
++     return true;
++ }
++ 
++ //we still use std resp stuff, but copy the data from dma area
++ bool shmem_ipc_get_eeprom_resp(
++         shmem_ipc_st_ptr s_ptr, 
++         const uint32_t len,
++         uint8_t* e_data_ptr) {
++   pthread_mutex_lock(&s_ptr->_rq_ctrl->_lock);
++ 
++   if (not s_ptr->_rq_ctrl->_qside_rsp_set) {
++     pthread_mutex_unlock(&s_ptr->_rq_ctrl->_lock);
++     return false; //no resp available yet
++   }
++ 
++   s_ptr->_rq_ctrl->_qside_rsp_set=0;
++   //if dma_set is not 1, complain.. during req we should've set it
++   if (not s_ptr->_rq_ctrl->_dma_in_use) {
++       printf("*FATAL* :%s: What _dma_set is not set ? \n",__FUNCTION__);
++       exit(1);
++   }
++   memcpy(e_data_ptr,s_ptr->_data_ptr,len);
++   s_ptr->_rq_ctrl->_dma_in_use=0;
++   pthread_mutex_unlock(&s_ptr->_rq_ctrl->_lock);
++   return true;
++ }
++ 
++ 
++ 
++ 
++ void shmem_ipc_close(
++         shmem_ipc_st_ptr s_ptr) {
++   munmap(s_ptr->_rq_ctrl, s_ptr->_mmap_sz);
++   close(s_ptr->_fd);
++   free(s_ptr->_nm);
++   delete s_ptr;
++ }
++ 
++ static shmem_ipc_st_ptr clnt_q;
++ 
++ 
++ //copied from Qemu's cpu-common.h
++ enum device_endian {
++     DEVICE_NATIVE_ENDIAN,
++     DEVICE_BIG_ENDIAN,
++     DEVICE_LITTLE_ENDIAN,
++ };
++ 
++ //PCI device region attributes
++ #define  SIMDEV_ADDRESS_SPACE_IO            0x01
++ #define  SIMDEV_ADDRESS_SPACE_MEMORY        0x00
++ #define  SIMDEV_ADDRESS_MEM_TYPE_64         0x04    /* 64 bit address */
++ #define  SIMDEV_ADDRESS_MEM_PREFETCH        0x08    /* prefetchable? */
++ 
++ 
++ 
++ struct per_dev_sav_st {
++     int32_t _who_am_i;
++     int32_t _kind;
++     void* _opq;
++ };
++ typedef per_dev_sav_st* per_dev_sav_st_ptr;
++ 
++ #define MAX_DEVS_PER_BOARD 128 
++ 
++ static per_dev_sav_st per_dev_sav_sts[MAX_DEVS_PER_BOARD];
++ 
++ //save qemu_side_cb.Use it just for the APIs. not opq
++ static  qemu_side_info_st qemu_side_st;
++ 
++ extern "C"
++ uint64_t MMIO_RD_CB(void* opq,uint64_t adrs,unsigned sz) {
++     rgn_opq_st* rptr = (rgn_opq_st*)opq;
++     uint32_t rgn = rptr->rgn_id;
++     per_dev_sav_st* dev_ptr = (per_dev_sav_st*)rptr->dev_ptr;
++     shmem_elem_st elem;
++     elem._who_am_i = dev_ptr->_who_am_i;
++     pci_xchng_msg_st* xptr = (pci_xchng_msg_st*)(elem._data);
++     xptr->_rgn  = rgn;
++     xptr->_op = pci_xchng_msg_st::RD_RQ;
++     xptr->_rd._adrs = adrs;
++     xptr->_rd._sz = sz;
++     while(1) {
++         bool rval = shmem_ipc_set_req(clnt_q,&elem);
++         if (rval) { break;}
++     }
++     shmem_elem_st rsp_elem;
++     while(1) {
++         bool rval = shmem_ipc_get_resp(clnt_q,&rsp_elem);
++         if (rval) { break;}
++     }
++     xptr = (pci_xchng_msg_st*)(rsp_elem._data);
++     return xptr->_rd._val;
++ }
++ extern "C"
++ uint64_t I2C_DEV_MMIO_RD_CB(void* opq,uint64_t adrs,unsigned sz) {
++     per_dev_sav_st* dev_ptr = (per_dev_sav_st*)opq;
++     shmem_elem_st elem;
++     elem._who_am_i = dev_ptr->_who_am_i;
++     pci_xchng_msg_st* xptr = (pci_xchng_msg_st*)(elem._data);
++     xptr->_rgn  = 0;
++     xptr->_op = pci_xchng_msg_st::RD_RQ;
++     xptr->_rd._adrs = adrs;
++     xptr->_rd._sz = sz;
++     while(1) {
++         bool rval = shmem_ipc_set_req(clnt_q,&elem);
++         if (rval) { break;}
++     }
++     shmem_elem_st rsp_elem;
++     while(1) {
++         bool rval = shmem_ipc_get_resp(clnt_q,&rsp_elem);
++         if (rval) { break;}
++     }
++     xptr = (pci_xchng_msg_st*)(rsp_elem._data);
++     return xptr->_rd._val;
++ }
++ 
++ extern "C"
++ void    MMIO_WR_CB(void* opq,uint64_t adrs ,uint64_t val,unsigned sz) {
++     rgn_opq_st* rptr = (rgn_opq_st*)opq;
++     uint32_t rgn = rptr->rgn_id;
++     per_dev_sav_st* dev_ptr = (per_dev_sav_st*)rptr->dev_ptr;
++     shmem_elem_st elem;
++     elem._who_am_i = dev_ptr->_who_am_i;
++     pci_xchng_msg_st* xptr = (pci_xchng_msg_st*)(elem._data);
++     xptr->_rgn  = rgn;
++     xptr->_op = pci_xchng_msg_st::WR_RQ;
++     xptr->_wr._adrs = adrs;
++     xptr->_wr._val =  val;
++     xptr->_wr._sz = sz;
++     //printf("%s: rgn=%d who_am_i=%d op=%d \n",__FUNCTION__,xptr->_rgn,elem._who_am_i,xptr->_op); fflush(stdout);
++     while(1) {
++         bool rval = shmem_ipc_set_req(clnt_q,&elem);
++         if (rval) { break;}
++     }
++ }
++ 
++ extern "C"
++ void    I2C_DEV_MMIO_WR_CB(void* opq,uint64_t adrs ,uint64_t val,unsigned sz) {
++     per_dev_sav_st* dev_ptr = (per_dev_sav_st*)opq;
++     shmem_elem_st elem;
++     elem._who_am_i = dev_ptr->_who_am_i;
++     pci_xchng_msg_st* xptr = (pci_xchng_msg_st*)(elem._data);
++     xptr->_rgn  = 0;
++     xptr->_op = pci_xchng_msg_st::WR_RQ;
++     xptr->_wr._adrs = adrs;
++     xptr->_wr._val =  val;
++     xptr->_wr._sz = sz;
++     //printf("%s: rgn=%d who_am_i=%d op=%d \n",__FUNCTION__,xptr->_rgn,elem._who_am_i,xptr->_op); fflush(stdout);
++     while(1) {
++         bool rval = shmem_ipc_set_req(clnt_q,&elem);
++         if (rval) { break;}
++     }
++ }
++ 
++ extern "C"
++ uint64_t PIO_RD_CB(void* opq,uint64_t adrs,unsigned sz) {
++     rgn_opq_st* rptr = (rgn_opq_st*)opq;
++     uint32_t rgn = rptr->rgn_id;
++     per_dev_sav_st* dev_ptr = (per_dev_sav_st*)rptr->dev_ptr;
++     shmem_elem_st elem;
++     elem._who_am_i = dev_ptr->_who_am_i;
++     pci_xchng_msg_st* xptr = (pci_xchng_msg_st*)(elem._data);
++     xptr->_rgn  = rgn;
++     xptr->_op = pci_xchng_msg_st::PIO_RD_RQ;
++     xptr->_rd._sz = sz;
++     xptr->_rd._adrs = adrs;
++    //printf("%s: rgn=%d who_am_i=%d op=%d \n",__FUNCTION__,xptr->_rgn,elem._who_am_i,xptr->_op);
++     while(1) {
++         bool rval = shmem_ipc_set_req(clnt_q,&elem);
++         if (rval) { break;}
++     }
++     shmem_elem_st rsp_elem;
++     while(1) {
++         bool rval = shmem_ipc_get_resp(clnt_q,&rsp_elem);
++         if (rval) { break;}
++     }
++     xptr = (pci_xchng_msg_st*)(rsp_elem._data);
++     return xptr->_rd._val;
++ }
++ 
++ extern "C"
++ void    PIO_WR_CB(void* opq,uint64_t adrs ,uint64_t val,unsigned sz) {
++     rgn_opq_st* rptr = (rgn_opq_st*)opq;
++     uint32_t rgn = rptr->rgn_id;
++     per_dev_sav_st* dev_ptr = (per_dev_sav_st*)rptr->dev_ptr;
++     shmem_elem_st elem;
++     elem._who_am_i = dev_ptr->_who_am_i;
++     pci_xchng_msg_st* xptr = (pci_xchng_msg_st*)(elem._data);
++     xptr->_rgn  = rgn;
++     xptr->_op = pci_xchng_msg_st::PIO_WR_RQ;
++     xptr->_wr._val =  val;
++     xptr->_wr._adrs = adrs;
++     xptr->_wr._sz = sz;
++     //printf("%s: rgn=%d who_am_i=%d op=%d \n",__FUNCTION__,xptr->_rgn,elem.who_am_i,xptr->_op);
++     while(1) {
++         bool rval = shmem_ipc_set_req(clnt_q,&elem);
++         if (rval) { break;}
++     }
++ 
++ }
++ 
++ extern "C"
++ void CONFIG_WR_CB (void* opq, uint32_t adrs , uint32_t val , int len ) {
++     per_dev_sav_st* dptr = (per_dev_sav_st*)opq;
++     shmem_elem_st elem;
++     elem._who_am_i = dptr->_who_am_i;
++     pci_xchng_msg_st* xptr = (pci_xchng_msg_st*)(elem._data);
++     xptr->_rgn  = 0;//doesn't matter
++     xptr->_op = pci_xchng_msg_st::CFG_WR_RQ;
++     xptr->_wr._adrs = adrs;
++     xptr->_wr._val =  val;
++     xptr->_wr._sz = len;
++     //printf("%s: Start rgn=%d who_am_i=%d op=%d \n",__FUNCTION__,xptr->_rgn,elem._who_am_i,xptr->_op);
++     while(1) {
++         bool rval = shmem_ipc_set_req(clnt_q,&elem);
++         if (rval) { break;}
++     }
++     //printf("%s: Done rgn=%d who_am_i=%d op=%d \n",__FUNCTION__,xptr->_rgn,elem._who_am_i,xptr->_op);
++ }
++ 
++ extern "C"
++ void RESET_CB (void* opq) {
++     per_dev_sav_st* dptr = (per_dev_sav_st*)opq;
++     shmem_elem_st elem;
++     elem._who_am_i = dptr->_who_am_i;
++     pci_xchng_msg_st* xptr = (pci_xchng_msg_st*)(elem._data);
++     xptr->_rgn  = 0; //doesn't matter
++     xptr->_op = pci_xchng_msg_st::RST_RQ;
++     //printf("%s: Start rgn=%d who_am_i=%d op=%d \n",__FUNCTION__,xptr->_rgn,elem._who_am_i,xptr->_op);
++     while(1) {
++         bool rval = shmem_ipc_set_req(clnt_q,&elem);
++         if (rval) { break;}
++     }
++     //printf("%s: Done rgn=%d who_am_i=%d op=%d \n",__FUNCTION__,xptr->_rgn,elem._who_am_i,xptr->_op);
++ }
++ 
++ 
++ int32_t EEPROM_RD_CB_FN (
++         int32_t who,
++         int32_t type, 
++         uint32_t offset, 
++         int32_t length, 
++         uint8_t* data) {
++ 
++     shmem_elem_st elem;
++     elem._who_am_i = who;
++     eeprom_xchng_msg_st* xptr = (eeprom_xchng_msg_st*)(elem._data);
++     xptr->_op = eeprom_xchng_msg_st::RD_RQ;
++     xptr->_rd._offs = offset;
++     xptr->_rd._len = length;
++     xptr->_rd._type = type;
++     while(1) {
++         bool rval = shmem_ipc_set_eeprom_req(clnt_q,&elem,length,data);
++         if (rval) { break;}
++     }
++     while(1) {
++         bool rval = shmem_ipc_get_eeprom_resp(clnt_q,length,data);
++         if (rval) { break;}
++     }
++ 
++     return 0;
++ }
++ 
++ static void LIB_INIT_CMN(int32_t kind) {
++     static bool first_time = 0;
++     if (not first_time) {
++         for (uint32_t idx=0; idx < MAX_DEVS_PER_BOARD; idx ++) {
++             per_dev_sav_sts[idx]._who_am_i=-1;
++             per_dev_sav_sts[idx]._opq=0;
++             per_dev_sav_sts[idx]._kind=kind;
++         }
++         first_time = 1;
++     }
++ }
++ 
++ static 
++ void prep_dev_sav_sts (int32_t who, int32_t kind, void* opq) {
++   //make sure we have not seen this before. 
++   if (not ((who >=0) and (who < MAX_DEVS_PER_BOARD))) {
++       printf("*FATAL* WHO AM I  \"%d\" is out of range 0..%d \n",who,MAX_DEVS_PER_BOARD);
++       exit (-1);
++   }
++   if (0 != per_dev_sav_sts[who]._opq ) {
++       printf("*FATAL* WHO AM I  \"%d\" is already in use\n",who);
++       exit (-1);
++   }
++   per_dev_sav_sts[who]._who_am_i = who;
++   per_dev_sav_sts[who]._opq = opq;
++   per_dev_sav_sts[who]._kind = kind;
++ }
++ 
++ static int32_t LIB_DEV_INIT_FN (const char* pfile, board_side_info_st* b_side,const qemu_side_info_st* q_side, int dev_type) {
++     static bool first_time = 0;
++ 
++     //printf("%s:Enter\n",__FUNCTION__); fflush(stdout);
++     LIB_INIT_CMN(dev_type);
++ 
++     b_side->dev_type = dev_type;
++ 
++   json_contents_st json;
++ 
++ 
++   //printf("%s:Start parse_json_file \n",__FUNCTION__); fflush(stdout);
++   if ( 0 != parse_json_file (pfile, json)) {
++       printf("*FATAL* JSON \"%s\" repoted error\n",pfile);
++       exit (-1);
++   }
++   //printf("%s:Done parse_json_file \n",__FUNCTION__); fflush(stdout);
++   //printf("%s RGNS=%d\n",__FUNCTION__,(uint32_t)json.rgn_sts.size());
++ 
++   b_side->  device_id = 0x1234;
++   b_side->  vendor_id = 0x1234;
++   b_side->  endianess = DEVICE_NATIVE_ENDIAN;
++   for (uint32_t idx=0; idx < 6; idx ++) {
++       b_side->rgns[idx].id=idx ;
++       b_side->rgns[idx].attr= SIMDEV_ADDRESS_SPACE_MEMORY ;
++       b_side->rgns[idx].size=0 ;
++       b_side->rgns[idx].opq=0 ;
++   }
++ 
++   b_side-> mmio_wr_cb = MMIO_WR_CB;
++   b_side-> mmio_rd_cb = MMIO_RD_CB;
++   b_side-> pio_wr_cb = PIO_WR_CB;
++   b_side-> pio_rd_cb = PIO_RD_CB;
++   b_side->cfg_wr_cb = CONFIG_WR_CB;
++   b_side->rst_cb = RESET_CB;
++   memset(static_cast<void*>(&b_side->intr),0,sizeof(b_side->intr));
++   b_side->opq = 0;
++   b_side->nm = 0;
++   b_side->log.fl=0;
++   b_side->log.dbg=0;
++ 
++ 
++ 
++ 
++   int32_t who_am_i= atoi(json.who_am_i.c_str());
++   prep_dev_sav_sts(who_am_i,DEV_PCI,q_side->opq);
++   //Enough if we copy the Qemu side CB for first time.
++   if (not first_time) {
++     memcpy(static_cast<void*>(&qemu_side_st), q_side, sizeof(qemu_side_info_st));
++   }
++ 
++   b_side->opq = &per_dev_sav_sts[who_am_i]; 
++   b_side->intr = json.intr;
++   b_side->nm = strdup(json.dev_nm.c_str());
++   b_side->log.dbg = atoi(json.dbg.c_str());
++   b_side->mf = 0; //we've a multifunciton 
++   if ("-1" != json.dev_mf) {
++       b_side->mf = 1; //we've a multifunciton 
++   }
++   b_side->max_asz = 4; //32 bit max access
++   if ("8" == json.max_asz) {
++       b_side->max_asz = 8; //64 bit max access
++   }
++ 
++   char str[500];
++   sprintf(str,"%s.log",b_side->nm);
++   b_side->log.fl = fopen(str,"w+");
++   if (0 == b_side->log.fl) {
++       printf("FATAL %s: unable to create file %s \n",__FUNCTION__,str);
++       exit(1);
++   }
++ 
++ 
++   if (json.endian == "NATIVE") {
++     b_side->  endianess = DEVICE_NATIVE_ENDIAN;
++   }else if (json.endian == "BIG") {
++     b_side->  endianess = DEVICE_BIG_ENDIAN;
++   }else if (json.endian == "LITTLE") {
++     b_side->  endianess = DEVICE_LITTLE_ENDIAN;
++   }else {
++       printf("*FATAL* ENDIAN   \"%s\" is not one of NATIVE/LITTLE/BIG \n",json.endian.c_str());
++       exit (-1);
++   }
++ 
++   //form shm name
++   std::string sh_mem_nm(get_current_dir_name());
++   for (uint32_t idx=1; idx < sh_mem_nm.size(); idx ++) {
++       if (sh_mem_nm[idx] == '/' ) { sh_mem_nm[idx]=':';}
++   }
++ 
++   for (uint32_t idx=0; idx < MAX_NUM_REGIONS; idx ++) {
++         rgn_opq_st* rptr = new rgn_opq_st;
++         rptr->rgn_id = idx;
++         rptr->dev_ptr = &per_dev_sav_sts[who_am_i];
++         char t_str[100];
++         sprintf(t_str,"%d",idx);
++         rptr->nm = "RGN-" + string(t_str); 
++         b_side->rgns[idx].opq = rptr;
++         b_side->rgns[idx].id = idx; 
++         b_side->rgns[idx].attr = 0;
++         b_side->rgns[idx].size = 0;
++         if (idx < json.rgn_sts.size()) {
++             b_side->rgns[idx].attr = json.rgn_sts[idx]._attr;
++             b_side->rgns[idx].size = json.rgn_sts[idx]._size;
++         }
++   }
++ 
++   //lets update config registers.
++   if (DEV_PCI == dev_type) {
++       uint32_t cnt = json.cfgs.size();
++       for (uint32_t idx=0; idx < cnt; idx ++) {
++           cfg_st* cptr = json.cfgs[idx];
++           switch(cptr->sz) {
++               case 1: { q_side->cfg_wr_1b_fn(q_side->opq,cptr->offs,cptr->u8); } break;
++               case 2: { q_side->cfg_wr_2b_fn(q_side->opq,cptr->offs,cptr->u16); } break;
++               case 4: { q_side->cfg_wr_4b_fn(q_side->opq,cptr->offs,cptr->u32); } break;
++               default: {
++                            printf("*FATAL*: %s: size %d is is not one of 1/2/4  \n",__FUNCTION__,cptr->sz);
++                            exit(1);
++                        }break;
++           }
++           if ((0 == cptr->offs) && (2 == cptr->sz)) { 
++               b_side->vendor_id= cptr->u16;
++           }
++           if ((2 == cptr->offs) && (2 == cptr->sz)) { 
++               b_side->device_id = cptr->u16;
++           }
++           if ((0 == cptr->offs) && (4 == cptr->sz)) { 
++               b_side->vendor_id= (uint16_t)cptr->u32;
++               b_side->device_id= (uint16_t)(cptr->u32 >> 16);
++           }
++       }
++   }
++ 
++   if (DEV_I2C == dev_type) {
++   b_side-> mmio_wr_cb = I2C_DEV_MMIO_WR_CB;
++   b_side-> mmio_rd_cb = I2C_DEV_MMIO_RD_CB;
++   }
++ 
++   if (not first_time) {
++       const char* sh_mem_to_board_nm= sh_mem_nm.c_str();
++       clnt_q = shmem_ipc_open(sh_mem_to_board_nm, SHMEM_ELEM_Q_SZ, sizeof(shmem_elem_st),NUM_DEVICES);
++ 
++       if (0 == clnt_q) {
++           printf("*ERROR* Unable to open SHM Q to board\"%s\"\n",sh_mem_to_board_nm);
++           return -1;
++       }
++   }
++ 
++   if (not first_time) {
++         first_time = 1;
++   }
++     return 0;
++ }
++ 
++ extern "C" int32_t LIB_PCI_DEV_INIT_FN (const char* pfile, board_side_info_st* b_side,const qemu_side_info_st* q_side) {
++     return LIB_DEV_INIT_FN(pfile,b_side,q_side,DEV_PCI);
++ 
++ }
++ extern "C" int32_t LIB_I2C_DEV_INIT_FN (const char* pfile, board_side_info_st* b_side,const qemu_side_info_st* q_side) {
++     return LIB_DEV_INIT_FN(pfile,b_side,q_side,DEV_I2C);
++ }
++ extern "C" int32_t LIB_EEPROM_DEV_INIT_FN (eeprom_board_side_st* b_side) {
++     LIB_INIT_CMN(DEV_EEPROM);
++     b_side->cb = EEPROM_RD_CB_FN;
++     return 0;
++ }
++ 
++ extern "C" int32_t LIB_I2C_BR_DEV_INIT_FN (int32_t who,void* opq) {
++     LIB_INIT_CMN(DEV_I2C_BR);
++     prep_dev_sav_sts(who,DEV_I2C_BR,opq);
++     return 0;
++ }
++ 
++ extern "C" void DO_I2C_BR_BOARD_SIDE_INIT (
++         int32_t who) {
++     shmem_elem_st elem;
++     elem._who_am_i = who;
++     i2cbr_xchng_msg_st* xptr = (i2cbr_xchng_msg_st*)(elem._data);
++     xptr->_op = I2CBR_INIT_RQ;
++     //printf("%s: Start who_am_i=%d op=%d \n",__FUNCTION__,elem._who_am_i,xptr->_op);
++     while(1) {
++         bool rval = shmem_ipc_set_req(clnt_q,&elem);
++         if (rval) { break;}
++     }
++     //printf("%s: Done who_am_i=%d op=%d \n",__FUNCTION__,elem._who_am_i,xptr->_op);
++     shmem_elem_st rsp_elem;
++     while(1) {
++         bool rval = shmem_ipc_get_resp(clnt_q,&rsp_elem);
++         if (rval) { break;}
++     }
++     //setup timer for handling remote side requests. 
++ }
++ 
++ extern "C" void DO_EEPROM_BOARD_SIDE_INIT (
++         int32_t who) {
++     shmem_elem_st elem;
++     elem._who_am_i = who;
++     eeprom_xchng_msg_st* xptr = (eeprom_xchng_msg_st*)(elem._data);
++     xptr->_op = eeprom_xchng_msg_st::INIT_RQ;
++     //printf("%s: Start who_am_i=%d op=%d \n",__FUNCTION__,elem._who_am_i,xptr->_op);
++     while(1) {
++         bool rval = shmem_ipc_set_req(clnt_q,&elem);
++         if (rval) { break;}
++     }
++     //printf("%s: Done who_am_i=%d op=%d \n",__FUNCTION__,elem._who_am_i,xptr->_op);
++     shmem_elem_st rsp_elem;
++     while(1) {
++         bool rval = shmem_ipc_get_resp(clnt_q,&rsp_elem);
++         if (rval) { break;}
++     }
++     //setup timer for handling remote side requests. 
++ }
++ 
++ extern "C" void DO_BOARD_SIDE_INIT (
++         const board_side_info_st* b_side,
++         const qemu_side_info_st* q_side) {
++     per_dev_sav_st_ptr d_ptr = (per_dev_sav_st_ptr)(b_side->opq);
++     shmem_elem_st elem;
++     elem._who_am_i = d_ptr->_who_am_i;
++     pci_xchng_msg_st* xptr = (pci_xchng_msg_st*)(elem._data);
++     xptr->_rgn  = 0; //doesn't matter
++     xptr->_op = pci_xchng_msg_st::INIT_RQ;
++     //printf("%s: Start INIT_RQ  who_am_i=%d \n",__FUNCTION__,elem._who_am_i);
++     while(1) {
++         bool rval = shmem_ipc_set_req(clnt_q,&elem);
++         if (rval) { break;}
++     }
++     //printf("%s: DONE INIT_RQ  who_am_i=%d \n",__FUNCTION__,elem._who_am_i);
++     //printf("%s: START wait for INIT_RSP  who_am_i=%d \n",__FUNCTION__,elem._who_am_i);
++     shmem_elem_st rsp_elem;
++     while(1) {
++         bool rval = shmem_ipc_get_resp(clnt_q,&rsp_elem);
++         if (rval) { break;}
++     }
++     //printf("%s: DONE wait for INIT_RSP  who_am_i=%d \n",__FUNCTION__,elem._who_am_i);
++     //setup timer for handling remote side requests. 
++ }
++ 
++ static int32_t proc_bside_pci_ops (
++         shmem_ipc_st_ptr s_ptr, per_dev_sav_st_ptr dev_ptr) {
++     printf("%s ERROR. Yet to support bside PCI ops\n",__FUNCTION__);
++     return 0;
++ }
++ static int32_t proc_bside_eeprom_ops (
++         shmem_ipc_st_ptr s_ptr, per_dev_sav_st_ptr dev_ptr) {
++     printf("%s ERROR. Yet to support bside EEPROM ops\n",__FUNCTION__);
++ 
++     return 0;
++ }
++ static int32_t proc_bside_i2c_ops (
++         shmem_ipc_st_ptr s_ptr, per_dev_sav_st_ptr dev_ptr) {
++     printf("%s ERROR. Yet to support bside I2C ops\n",__FUNCTION__);
++ 
++     return 0;
++ }
++ static int32_t proc_bside_i2cbr_ops (
++         shmem_ipc_st_ptr s_ptr, per_dev_sav_st_ptr dev_ptr) {
++ 
++     i2cbr_op_st st;
++     st._opq = dev_ptr->_opq;
++     shmem_elem_st rq_elem;
++     memcpy(&rq_elem,((char*)(s_ptr->_bside_rq_ptr)), s_ptr->_elem_sz);
++     i2cbr_xchng_msg_st* xptr = (i2cbr_xchng_msg_st*)(rq_elem._data);
++     st._xchng = xptr;
++     i2cbr_ovxr_handler(&st);
++     //copy it to the response area. Above call fills xptr.. so 
++     //reusing rq_elem contents
++     //memcpy(((char*)(s_ptr->_bside_rq_ptr)),&rq_elem,s_ptr->_elem_sz);
++     //Should not reuse rq_elem since later bside get rsp only from rsp_ptr
++     memcpy(((char*)(s_ptr->_bside_rsp_ptr)),&rq_elem,s_ptr->_elem_sz);
++ 
++     return 0;
++ }
++ 
++ 
++ void* bside_req_server (void* vptr) {
++     shmem_ipc_st_ptr s_ptr = (shmem_ipc_st_ptr) vptr;
++     printf("%s: Entering while loop\n",__FUNCTION__);
++     while(1) {
++         //bside will signal when there is something. wait for that.
++         pthread_mutex_lock(&s_ptr->_rq_ctrl->_bside_cv_lock);
++         //printf("%s: Waiting for pthread_cond_wait..\n",__FUNCTION__); fflush(stdout);
++         s_ptr->_rq_ctrl->_waiting_for_cv_signal = true;
++         int rv = pthread_cond_wait((pthread_cond_t*)&(s_ptr->_rq_ctrl->_bside_cv), &(s_ptr->_rq_ctrl->_bside_cv_lock));
++         s_ptr->_rq_ctrl->_waiting_for_cv_signal = false;
++         if (0 != rv) {
++             printf("%s:ERROR pthread_cond_wait returned error=%d . Bailing\n",__FUNCTION__,rv);
++             return 0;
++         }
++         //printf("%s: Out of for pthread_cond_wait..\n",__FUNCTION__); fflush(stdout);
++         //we better see bside request set.
++         if (-1 == s_ptr->_rq_ctrl->_bside_rq_set) {
++             printf("%s ERROR We got a request event but no valid req set ?\n",__FUNCTION__);
++             pthread_mutex_unlock(&s_ptr->_rq_ctrl->_bside_cv_lock);
++             continue;
++         }
++         //rq_set has the device ID. Use that to get the info
++         //make sure we are in range
++         int32_t dev_id = s_ptr->_rq_ctrl->_bside_rq_set;
++         if (not ((dev_id >=0) and (dev_id < MAX_DEVS_PER_BOARD))) {
++             printf("%s ERROR We got a request from device ID(%d) that is out oif range?\n",__FUNCTION__,dev_id);
++             pthread_mutex_unlock(&s_ptr->_rq_ctrl->_bside_cv_lock);
++             continue;
++         }
++         if (not ((dev_id >=0) and (dev_id < MAX_DEVS_PER_BOARD))) {
++             printf("%s ERROR We got a request from device ID(%d) that is out oif range?\n",__FUNCTION__,dev_id);
++             pthread_mutex_unlock(&s_ptr->_rq_ctrl->_bside_cv_lock);
++             continue;
++         }
++         per_dev_sav_st* dev_ptr = &per_dev_sav_sts[dev_id];
++         if (dev_ptr->_who_am_i != dev_id) {
++             printf("%s ERROR We got a request from device ID(%d) that is not matching?\n",__FUNCTION__,dev_id);
++             pthread_mutex_unlock(&s_ptr->_rq_ctrl->_bside_cv_lock);
++             continue;
++         }
++         //printf("%s: Start calling proc funcs..\n",__FUNCTION__); fflush(stdout);
++         switch(dev_ptr->_kind) {
++             case DEV_PCI: { proc_bside_pci_ops(s_ptr,dev_ptr); } break;
++             case DEV_EEPROM: { proc_bside_eeprom_ops(s_ptr,dev_ptr); } break;
++             case DEV_I2C: { proc_bside_i2c_ops(s_ptr,dev_ptr); } break;
++             case DEV_I2C_BR: { proc_bside_i2cbr_ops(s_ptr,dev_ptr); } break;
++             default: {
++                          printf("%s:ERROR found a dev kind=%d that is invalid\n",__FUNCTION__,dev_ptr->_who_am_i);
++                      } break;
++         }
++         //printf("%s: Done calling proc funcs..\n",__FUNCTION__); fflush(stdout);
++         s_ptr->_rq_ctrl->_bside_rq_set=-1;
++         //printf("%s: Setting _bside_rsp_set=%d calling proc funcs..\n",__FUNCTION__,dev_ptr->_who_am_i); fflush(stdout);
++         s_ptr->_rq_ctrl->_bside_rsp_set=dev_ptr->_who_am_i;
++         pthread_mutex_unlock(&s_ptr->_rq_ctrl->_bside_cv_lock);
++     }
++     return 0;
++ }
++ 

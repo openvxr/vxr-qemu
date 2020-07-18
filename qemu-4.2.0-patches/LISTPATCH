@@ -1,0 +1,14 @@
+chardev/char-socket.c
+default-configs/x86_64-softmmu.mak
+hw/i2c/core.c
+hw/misc/Kconfig
+hw/misc/Makefile.objs
+hw/misc/tmp421.c
+include/hw/i2c/i2c.h
+monitor/qmp-cmds.c
+qapi/net.json
+slirp/src/slirp.c
+slirp/src/slirp.h
+target/i386/cpu.c
+include/hw/hw.h
+exec.c

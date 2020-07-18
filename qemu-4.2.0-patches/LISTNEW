@@ -1,0 +1,12 @@
+hw/misc/myi2cdevice.c
+hw/misc/myi2cdevice.h
+hw/misc/eeprom_cmn.h
+hw/misc/obmc_device_common.h
+hw/misc/ovxr_xchng.h
+hw/misc/simdev.c
+hw/misc/simdev_api.h
+hw/misc/simdev_cmn.h
+hw/misc/simi2c-br.c
+hw/misc/simi2c-br.h
+hw/misc/simi2cdev.c
+hw/misc/simdev_plus.cpp
